@@ -109,7 +109,8 @@ cmd_show() {
 cmd_take() {
   local n="$1" base count sha title
   require_kano
-  [ -z "$(git status --porcelain)" ] || { echo "error: 工作区不干净" >&2; exit 1; }
+  # 台账是本脚本自己的产物，允许它处于未提交状态
+  [ -z "$(git status --porcelain -- . ':(exclude)${LEDGER}')" ] || { echo "error: 工作区不干净" >&2; exit 1; }
   git fetch --quiet upstream main
   echo "拉取 PR #$n ..."
   git fetch --quiet upstream "+refs/pull/${n}/head:${PR_REF}/${n}"
