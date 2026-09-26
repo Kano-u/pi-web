@@ -1,0 +1,8 @@
+# 上游仓库没有这个文件，而 GitHub Actions 在 Linux 上 checkout，CI 永远是 LF。
+# Windows 上 `core.autocrlf=true` 会把工作副本转成 CRLF，让一部分测试的比较失败
+# （例如 AppShell.file-viewer-state.test.mjs 里写死的 "</div>\n      </div>\n    </div>"）。
+# 固定为 LF 后工作副本与 index、与 CI 一致。
+#
+# index 里本来存的就是 LF，所以这不是偏离上游，只是去掉本地转换噪音：
+# 与上游 merge 时 diff 仍然只包含真实的代码改动。
+* text=auto eol=lf
