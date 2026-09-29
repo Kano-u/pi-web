@@ -1,13 +1,23 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 
 interface DirectoryEntry {
   name: string;
   path: string;
+  mtimeMs?: number;
 }
+
+type DirectorySortKey = "mtime" | "name";
+type DirectorySortDirection = "asc" | "desc";
+
+// 每种字段的默认方向：名称升序，修改时间降序（最新的在最上面）。
+const DEFAULT_SORT_DIRECTION: Record<DirectorySortKey, DirectorySortDirection> = {
+  mtime: "desc",
+  name: "asc",
+};
 
 interface BrowseResponse {
   path?: string;
@@ -43,6 +53,21 @@ function DriveIcon() {
   );
 }
 
+function SortArrows({ active, direction }: { active: boolean; direction: DirectorySortDirection }) {
+  const upActive = active && direction === "asc";
+  const downActive = active && direction === "desc";
+  return (
+    <span aria-hidden="true" style={{ display: "inline-flex", flexDirection: "column", lineHeight: 0, gap: 1 }}>
+      <svg width="8" height="5" viewBox="0 0 8 5" fill="none" stroke={upActive ? "var(--accent)" : "currentColor"} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: active ? (upActive ? 1 : 0.35) : 0.4 }}>
+        <path d="M1 4 4 1l3 3" />
+      </svg>
+      <svg width="8" height="5" viewBox="0 0 8 5" fill="none" stroke={downActive ? "var(--accent)" : "currentColor"} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: active ? (downActive ? 1 : 0.35) : 0.4 }}>
+        <path d="M1 1l3 3 3-3" />
+      </svg>
+    </span>
+  );
+}
+
 function isWindowsDriveRoot(directory: string): boolean {
   return /^[a-zA-Z]:[\\/]?$/.test(directory);
 }
@@ -65,6 +90,8 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
   const [drives, setDrives] = useState<DirectoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState<DirectorySortKey>("mtime");
+  const [sortDirection, setSortDirection] = useState<DirectorySortDirection>(DEFAULT_SORT_DIRECTION.mtime);
 
   const navigateTo = useCallback(async (directory?: string) => {
     setLoading(true);
@@ -88,6 +115,29 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     setPortalTarget(document.body);
     void navigateTo(initialPath || undefined);
   }, [initialPath, navigateTo]);
+
+  const sortedDirectories = useMemo(() => {
+    const list = [...directories];
+    const byName = (left: DirectoryEntry, right: DirectoryEntry) => left.name.localeCompare(right.name);
+    list.sort((left, right) => {
+      const base = sortKey === "name"
+        ? byName(left, right)
+        : (left.mtimeMs ?? 0) - (right.mtimeMs ?? 0);
+      // 同一时间戳/同名时用名称做稳定的次级排序。
+      const resolved = base !== 0 ? base : byName(left, right);
+      return sortDirection === "asc" ? resolved : -resolved;
+    });
+    return list;
+  }, [directories, sortKey, sortDirection]);
+
+  const handleSortClick = useCallback((key: DirectorySortKey) => {
+    if (key === sortKey) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection(DEFAULT_SORT_DIRECTION[key]);
+  }, [sortKey]);
 
   const handlePathSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -169,6 +219,28 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           </button>
         </form>
 
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, flexShrink: 0, padding: "8px 14px 0" }}>
+          {([["name", "directoryPicker.sortName"], ["mtime", "directoryPicker.sortModified"]] as const).map(([key, labelKey]) => {
+            const active = sortKey === key;
+            const direction = active ? sortDirection : DEFAULT_SORT_DIRECTION[key];
+            const directionLabel = direction === "asc" ? t("directoryPicker.sortAscending") : t("directoryPicker.sortDescending");
+            const disabled = loading || drives !== null;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleSortClick(key)}
+                disabled={disabled}
+                aria-pressed={active}
+                title={`${t(labelKey)} · ${directionLabel}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 28, padding: "0 9px", border: "1px solid var(--border)", borderRadius: 6, background: active ? "var(--bg-selected)" : "var(--bg-panel)", color: active ? "var(--accent)" : "var(--text-muted)", fontSize: 11, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1 }}
+              >
+                {t(labelKey)}
+                <SortArrows active={active} direction={direction} />
+              </button>
+            );
+          })}
+        </div>
         <div className="directory-picker-list" style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "8px 10px" }}>
           {loading ? (
             <div style={{ padding: 8, color: "var(--text-dim)", fontSize: 11 }}>{t("directoryPicker.loadingDirectories")}</div>
@@ -192,8 +264,8 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
                 <div style={{ padding: 8, color: "var(--text-dim)", fontSize: 11 }}>{t("directoryPicker.noDrives")}</div>
               )}
             </>
-          ) : directories.length > 0 ? (
-            directories.map((entry) => (
+          ) : sortedDirectories.length > 0 ? (
+            sortedDirectories.map((entry) => (
               <button
                 key={entry.path}
                 className="directory-picker-entry"

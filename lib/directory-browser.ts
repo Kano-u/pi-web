@@ -7,6 +7,11 @@ export interface BrowsableDirectory {
   path: string;
 }
 
+// 目录项额外带上排序所需的元数据；驱动器候选项没有这些字段。
+export interface BrowsableDirectoryEntry extends BrowsableDirectory {
+  mtimeMs: number;
+}
+
 export function shouldShowWindowsDrivePicker(
   directory?: string,
   platform: NodeJS.Platform = process.platform,
@@ -57,27 +62,28 @@ export async function resolveDirectory(directory: string): Promise<string> {
   return realpath(normalizeDirectory(directory));
 }
 
-export async function listDirectories(directory: string): Promise<BrowsableDirectory[]> {
+export async function listDirectories(directory: string): Promise<BrowsableDirectoryEntry[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   // 忽略损坏、不可访问或不指向目录的符号链接。
-  const candidates = await Promise.all(entries.map(async (entry) => {
-    if (entry.isDirectory()) {
-      return { name: entry.name, path: path.join(directory, entry.name) };
-    }
-    if (!entry.isSymbolicLink()) return null;
-
+  const candidates = await Promise.all(entries.map(async (entry): Promise<BrowsableDirectoryEntry | null> => {
     try {
       const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        const entryStat = await stat(entryPath);
+        return { name: entry.name, path: entryPath, mtimeMs: entryStat.mtimeMs };
+      }
+      if (!entry.isSymbolicLink()) return null;
+
       const realEntryPath = await realpath(entryPath);
       const entryStat = await stat(realEntryPath);
       if (!entryStat.isDirectory()) return null;
-      return { name: entry.name, path: entryPath };
+      return { name: entry.name, path: entryPath, mtimeMs: entryStat.mtimeMs };
     } catch {
       return null;
     }
   }));
 
   return candidates
-    .filter((entry): entry is BrowsableDirectory => entry !== null)
+    .filter((entry): entry is BrowsableDirectoryEntry => entry !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
