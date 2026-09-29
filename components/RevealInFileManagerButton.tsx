@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { useLocalFileManagerAvailable } from "@/hooks/useLocalFileManager";
 import { revealPathInFileManager } from "@/lib/path-actions";
 import { FolderIcon } from "./FileIcons";
 
@@ -19,12 +20,17 @@ export function RevealInFileManagerButton({ filePath, className = "file-viewer-i
   iconSize?: number;
 }) {
   const { t } = useI18n();
+  const available = useLocalFileManagerAvailable();
   const [error, setError] = useState<string | null>(null);
 
   const reveal = useCallback(() => {
     setError(null);
     void revealPathInFileManager(filePath).then(setError);
   }, [filePath]);
+
+  // Opening a window is a desktop action, so a browser on another computer
+  // (LAN access) must not be offered it at all.
+  if (!available) return null;
 
   const label = error ?? t("i18n.revealInFileManager");
 

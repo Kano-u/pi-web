@@ -9,6 +9,7 @@ import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { RevealInFileManagerButton } from "./RevealInFileManagerButton";
 import { useI18n } from "@/hooks/useI18n";
+import { useLocalFileManagerAvailable } from "@/hooks/useLocalFileManager";
 import { pathIsReadableFile, revealPathInFileManager } from "@/lib/path-actions";
 
 const MarkdownLinkContext = createContext(false);
@@ -59,6 +60,7 @@ function InlineFilePath({ filePath, label, onOpenFile }: {
   onOpenFile: (filePath: string) => void;
 }) {
   const { t } = useI18n();
+  const fileManagerAvailable = useLocalFileManagerAvailable();
   const [error, setError] = useState<string | null>(null);
 
   const open = useCallback(() => {
@@ -68,9 +70,11 @@ function InlineFilePath({ filePath, label, onOpenFile }: {
         onOpenFile(filePath);
         return;
       }
-      setError(await revealPathInFileManager(filePath));
+      // A directory cannot be previewed in-app and only a browser on this
+      // machine can open it in the file manager, so a LAN browser stops here.
+      if (fileManagerAvailable) setError(await revealPathInFileManager(filePath));
     })();
-  }, [filePath, onOpenFile]);
+  }, [filePath, fileManagerAvailable, onOpenFile]);
 
   return (
     <span className="inline-file-path">
