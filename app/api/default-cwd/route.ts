@@ -1,7 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { allowFileRoot } from "@/lib/file-access";
 import { validateEntryName } from "@/lib/file-mutations";
 import {
   DEFAULT_CWD_TEMPLATE,
@@ -78,6 +77,7 @@ export async function PUT(req: Request) {
 
 // POST /api/default-cwd
 // Creates the configured (or built-in dated) directory if it doesn't exist and returns the path.
+// The client then selects it through /api/cwd/validate like any other directory (#996).
 export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
@@ -93,7 +93,6 @@ export async function POST(req: Request) {
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     if (!name) {
       mkdirSync(defaultCwd, { recursive: true });
-      allowFileRoot(defaultCwd);
       return NextResponse.json({ cwd: defaultCwd });
     }
 
@@ -103,7 +102,6 @@ export async function POST(req: Request) {
     }
     const projectCwd = join(resolveDefaultProjectBasePath(configured), name);
     mkdirSync(projectCwd, { recursive: true });
-    allowFileRoot(projectCwd);
     return NextResponse.json({ cwd: projectCwd });
   } catch (error) {
     const message = errorMessage(error);

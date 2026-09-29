@@ -1,6 +1,4 @@
-import { existsSync, readdirSync } from "fs";
-import { homedir } from "os";
-import path from "path";
+import { existsSync } from "fs";
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
 import {
   readDefaultCwdPath,
@@ -35,18 +33,8 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
     if (s.projectRoot) roots.add(normalizeSlashes(s.projectRoot));
   }
 
-  // Also allow ~/pi-cwd-* directories created by the built-in default-cwd path,
-  // plus whatever custom directory the user configured for that action.
-  try {
-    for (const name of readdirSync(homedir())) {
-      if (/^pi-cwd-\d{8}$/.test(name)) {
-        roots.add(normalizeSlashes(path.join(homedir(), name)));
-      }
-    }
-  } catch {
-    // ignore if home is unreadable
-  }
-
+  // The directory configured for "Use default directory" stays browsable before
+  // the sidebar selects it; selecting it still runs /api/cwd/validate (#996).
   try {
     const configured = resolveDefaultCwdPath(readDefaultCwdPath());
     if (existsSync(configured)) roots.add(normalizeSlashes(configured));

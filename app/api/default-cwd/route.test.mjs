@@ -43,8 +43,8 @@ test("GET reports the built-in dated folder until a custom path is saved", async
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.path, "");
-  assert.equal(body.placeholder, "~/pi-cwd-{date}");
-  assert.match(body.resolved, /pi-cwd-\d{8}$/);
+  assert.equal(body.placeholder, "~/pi-cwd/{date}");
+  assert.match(body.resolved, /pi-cwd[\\/]\d{8}$/);
 });
 
 test("PUT stores a custom path and POST creates that directory", async () => {
@@ -55,7 +55,7 @@ test("PUT stores a custom path and POST creates that directory", async () => {
   assert.deepEqual(body, {
     path: cwd,
     resolved: cwd,
-    placeholder: "~/pi-cwd-{date}",
+    placeholder: "~/pi-cwd/{date}",
   });
 
   response = await POST(request("POST"));
@@ -68,7 +68,7 @@ test("PUT stores a custom path and POST creates that directory", async () => {
   body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.path, "");
-  assert.match(body.resolved, /pi-cwd-\d{8}$/);
+  assert.match(body.resolved, /pi-cwd[\\/]\d{8}$/);
 });
 
 test("PUT rejects a relative path", async () => {
