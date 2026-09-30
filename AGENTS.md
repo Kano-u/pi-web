@@ -6,11 +6,9 @@ This checkout is a thin fork of upstream Pi Web. Its purpose is to **stay as clo
 
 ### Known failing tests (intentionally kept)
 
-`npm test` currently reports 8 failures. They reproduce on a clean upstream checkout and are deliberately left alone to keep the fork aligned with upstream — **do not re-run, investigate, or "fix" them in a session**:
+`npm test` currently reports 6 failures. They reproduce on a clean upstream checkout and are deliberately left alone to keep the fork aligned with upstream — **do not re-run, investigate, or "fix" them in a session**:
 
 - `components/ChatInput.test.mjs`: renders image warnings for known text-only defaults without an explicit model selection
-- `lib/default-cwd.test.mjs`: empty config resolves to a dated folder in the home directory
-- `lib/default-cwd.test.mjs`: expands ~, {date}, and absolute custom paths
 - `lib/enabled-models-runtime.test.mjs`: a project-level value is reported as shadowing the global one
 - `lib/file-mutations.test.mjs`: writeTextFile replaces content atomically and preserves mode
 - `lib/project-command-env.test.mjs`: direct bash updates the platform PATH key
@@ -81,7 +79,8 @@ app/api/
   auth/logout/[provider]/route.ts POST OAuth logout
   auth/providers/route.ts         GET OAuth and API-key provider lists
   cwd/validate/route.ts           POST validate/select a cwd
-  default-cwd/route.ts            GET/PUT configured path | POST create it (~/pi-cwd/YYYYMMDD by default)
+  default-cwd/route.ts            POST create ~/pi-cwd/YYYYMMDD (local date)
+  default-project/route.ts        GET/PUT default project directory | POST create a project folder
   files/[...path]/route.ts        GET file contents for viewer; POST file
                                   mutations (write/rename/delete/mkdir/touch/
                                   extract/compress) for the file explorer
@@ -124,7 +123,8 @@ lib/
   default-preferences.ts  write defaultModel/defaultThinkingLevel; detect project-level shadowing
   draft-store.ts       local draft persistence helpers
   file-access.ts       allowed file roots for /api/files and worktrees
-  default-cwd.ts       configured path for “Use default directory” (`~/.pi/agent/pi-web.json`, built-in `~/pi-cwd/{date}`)
+  default-cwd.ts       dated ~/pi-cwd/YYYYMMDD path for "Use default directory"
+  default-project.ts   default project directory for "New project" (~/.pi/agent/pi-web.json)
   file-paths.ts        client/server path encoding helpers
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
@@ -252,14 +252,14 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - git prints POSIX-style absolute paths even on Windows, so every path read out of git goes through `toNativePath()` (`lib/paths.ts`) before it is compared or returned. Compare paths with `samePath()`, never `===` — raw equality made `isTopLevel` permanently false on Windows and hid the worktree switcher entirely. Branch names are not paths and must keep their forward slashes. Browser code cannot apply Node path rules, so `/api/worktrees` resolves `currentWorktreePath` server-side; the sidebar must use that identity for highlighting and removal fallback.
 
 ### File access allow-list
-- `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, the configured default directory in `~/.pi/agent/pi-web.json`, and roots explicitly added with `allowFileRoot()`.
+- `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, and roots explicitly added with `allowFileRoot()`.
 - `/api/cwd/validate` and `/api/worktrees` call `allowFileRoot()` when they make a new location browsable. "Use default directory" is no exception: `/api/default-cwd` only creates `~/pi-cwd/YYYYMMDD`, and the sidebar selects it through `/api/cwd/validate` like any other directory.
 - Allowed roots are stored slash-normalized, but that is a Set-key convention, not a correctness requirement: `isPathWithinRoots()` (`lib/path-security.ts`, the single implementation behind `isFilePathAllowed()`) re-resolves and case-folds both sides, so either path form authorizes correctly. Keep that one implementation — it is the security boundary.
 - A UNC cwd (`\\host\share\dir`) must survive the `/api/files/[...path]` round-trip. `encodeFilePathForApi()` folds the `//` root into the first segment (`%2F%2Fhost`) because a literal `//` URL prefix is 308-normalized away before routing; `filePathFromApiSegments()` decodes it back. Never split UNC paths into segments and rejoin them — that silently turns `\\host\share` into the relative-looking `host/share` and every allow-check fails with 403.
 
 ### Default directory and new-project folders
-- `lib/default-cwd.ts` is upstream #996's dated path (`localDateStamp`, `defaultCwdPath`, `~/pi-cwd/<YYYYMMDD>`) plus our configurable layer (#892): `DEFAULT_CWD_TEMPLATE` is `~/pi-cwd/{date}`, and `~/.pi/agent/pi-web.json` can replace it through `GET`/`PUT /api/default-cwd`. Keep the upstream helpers intact while syncing so a later change to #996 still applies cleanly.
-- `POST /api/default-cwd` only creates the directory and returns it — it never calls `allowFileRoot()`. The sidebar selects the result through `commitCustomPath(..., { remember: false })`, so `/api/cwd/validate` stays the single path that validates, records project identity, and extends the allow-list (#996). It accepts an optional `{ name }`, which creates or reuses a folder under `resolveDefaultProjectBasePath()` (beside a `{date}`-templated default directory, otherwise inside it); that is what the sidebar's New project dialog submits.
+- "Use default directory" is upstream #996 and stays byte-identical to it: `lib/default-cwd.ts` (`localDateStamp`, `defaultCwdPath`, `~/pi-cwd/<YYYYMMDD>`), a POST-only `/api/default-cwd`, and no default-cwd entry in the file allow-list. Do not add a configurable default cwd back: upstream **closed** #892 on 2026-09-29 in favour of #996's design, where a dated folder keeps a first-time user out of their own data and needs no stable path because any folder with a session reopens from the picker.
+- Our own "New project" action is a separate layer instead: `lib/default-project.ts` reads `defaultProjectPath` from `~/.pi/agent/pi-web.json` (empty = the built-in `~/pi-cwd`, upstream's dated-folder parent), `GET`/`PUT /api/default-project` own that setting, and `POST /api/default-project { name }` creates or reuses `<project directory>/<name>`. The sidebar's New project dialog submits the name and then selects the returned path through `commitCustomPath`, so `/api/cwd/validate` still owns validation, project identity and the allow-list. Keeping this route apart from `/api/default-cwd` is deliberate — it is what makes syncing upstream's default-cwd code conflict-free.
 
 ### Plugins and skills
 - `/api/plugins` uses pi's `SettingsManager` + `DefaultPackageManager` for global/project package install, remove, update, enable, and disable. Disabling writes empty `extensions/skills/prompts/themes` arrays for that package entry.

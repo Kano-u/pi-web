@@ -15,9 +15,9 @@
 | [#899](https://github.com/agegr/pi-web/pull/899) | feat(files): file management for the explorer — create, rename, delete, download, archives, and in-place editing | ✅ 已摘取 c13bd1c |
 | [#963](https://github.com/agegr/pi-web/pull/963) | fix(chat): 自动压缩时显示压缩状态与「停止压缩」，而非「正在等待模型」 | ✅ 已摘取 533e153 |
 | [#960](https://github.com/agegr/pi-web/pull/960) | feat(enhancements): add modular frontend enhancement plugins suite & patch tools | ❌ 拒绝（注入式前端插件补丁套件（含 48K 行 JS 与 patch 脚本），与本项目结构不符） |
-| [#892](https://github.com/agegr/pi-web/pull/892) | feat: let users customize the Use default directory path | ✅ 已摘取 940596c（上游已关闭该 PR，改由 #996 实现默认目录；本地的可配置层保留在 #996 之上） |
+| [#892](https://github.com/agegr/pi-web/pull/892) | feat: let users customize the Use default directory path | ❌ 已回退（940596c 摘取后撤销：上游 2026-09-29 关闭该 PR，改由 #996 实现默认目录；本地只保留独立的「新建项目」+ 默认项目路径，见 #996 行） |
 | [#951](https://github.com/agegr/pi-web/pull/951) | feat: open and reveal paths in the OS file manager | ✅ 已摘取 3b04053 |
 | [#907](https://github.com/agegr/pi-web/pull/907) | feat(sidebar): open workspace in the system file manager | ❌ 拒绝（功能与已摘取的 #951 重复，由 #951 覆盖） |
 | [#884](https://github.com/agegr/pi-web/pull/884) | feat(chat): continue Markdown lists on new lines in the composer | ✅ 已摘取 fe6ce64 |
 | [#871](https://github.com/agegr/pi-web/pull/871) | fix: do not persist new-session model picks into global defaults | ✅ 已摘取 e64a634（`components/ChatInput.tsx` 与 #967 的 onCancelEdit 冲突已解决） |
-| [#996](https://github.com/agegr/pi-web/pull/996) | feat(default-cwd): create dated folders under ~/pi-cwd using the local date | ✅ 已摘取 ec00d90（默认目录改上游实现，可配置层与新建项目叠在其上） |
+| [#996](https://github.com/agegr/pi-web/pull/996) | feat(default-cwd): create dated folders under ~/pi-cwd using the local date | ✅ 已摘取 ec00d90（`lib/default-cwd.ts`、`/api/default-cwd`、`lib/file-access.ts` 与上游逐字节一致；「新建项目」走独立的 `/api/default-project`） |

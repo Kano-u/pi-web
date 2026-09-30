@@ -919,11 +919,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setNewProjectDefaultPath(null);
     setDropdownOpen(false);
     try {
-      const res = await fetch("/api/default-cwd");
-      const data = await res.json().catch(() => ({})) as { projectBase?: string };
-      setNewProjectDefaultPath(data.projectBase ?? null);
+      const res = await fetch("/api/default-project");
+      const data = await res.json().catch(() => ({})) as { resolved?: string };
+      setNewProjectDefaultPath(data.resolved ?? null);
     } catch {
-      // 解析失败时仍允许输入，提交会再次解析默认目录。
+      // 解析失败时仍允许输入，提交会再次解析默认项目路径。
     }
   }, []);
 
@@ -932,7 +932,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setNewProjectBusy(true);
     setNewProjectError(null);
     try {
-      const res = await fetch("/api/default-cwd", {
+      const res = await fetch("/api/default-project", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),

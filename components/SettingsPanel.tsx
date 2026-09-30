@@ -15,7 +15,7 @@ import {
   useChatAppearance,
 } from "@/hooks/useChatAppearance";
 import { sendAgentCommand } from "@/lib/agent-client";
-import type { DefaultCwdSettingsResponse, ShellToolSettingsResponse } from "@/lib/api-types";
+import type { DefaultProjectSettingsResponse, ShellToolSettingsResponse } from "@/lib/api-types";
 import { DirectoryPicker } from "./DirectoryPicker";
 import {
   setLastSettingsSection,
@@ -63,8 +63,8 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
 }
 
-function applyDefaultCwdResponse(
-  data: DefaultCwdSettingsResponse,
+function applyDefaultProjectResponse(
+  data: DefaultProjectSettingsResponse,
   setPath: (path: string) => void,
   setSavedPath: (path: string) => void,
   setResolved: (path: string) => void,
@@ -78,12 +78,12 @@ function applyDefaultCwdResponse(
   setError(data.error ?? null);
 }
 
-function DefaultDirectorySettings() {
+function DefaultProjectSettings() {
   const { t } = useI18n();
   const [path, setPath] = useState("");
   const [savedPath, setSavedPath] = useState("");
   const [resolved, setResolved] = useState("");
-  const [placeholder, setPlaceholder] = useState("~/pi-cwd/{date}");
+  const [placeholder, setPlaceholder] = useState("~/pi-cwd");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -91,11 +91,11 @@ function DefaultDirectorySettings() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/default-cwd")
+    void fetch("/api/default-project")
       .then(async (response) => {
-        const data = await response.json() as DefaultCwdSettingsResponse & { error?: string };
+        const data = await response.json() as DefaultProjectSettingsResponse & { error?: string };
         if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
-        if (!cancelled) applyDefaultCwdResponse(data, setPath, setSavedPath, setResolved, setPlaceholder, setError);
+        if (!cancelled) applyDefaultProjectResponse(data, setPath, setSavedPath, setResolved, setPlaceholder, setError);
       })
       .catch((cause) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -109,14 +109,14 @@ function DefaultDirectorySettings() {
     setError(null);
     setStatus(null);
     try {
-      const response = await fetch("/api/default-cwd", {
+      const response = await fetch("/api/default-project", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: nextPath }),
       });
-      const data = await response.json() as DefaultCwdSettingsResponse & { error?: string };
+      const data = await response.json() as DefaultProjectSettingsResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
-      applyDefaultCwdResponse(data, setPath, setSavedPath, setResolved, setPlaceholder, setError);
+      applyDefaultProjectResponse(data, setPath, setSavedPath, setResolved, setPlaceholder, setError);
       setStatus(t("i18n.saved"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -130,25 +130,25 @@ function DefaultDirectorySettings() {
 
   return (
     <section className="settings-general-section">
-      <h3 className="settings-general-heading">{t("settings.defaultDirectory")}</h3>
-      <p className="settings-general-description">{t("settings.defaultDirectoryDescription")}</p>
+      <h3 className="settings-general-heading">{t("settings.defaultProjectPath")}</h3>
+      <p className="settings-general-description">{t("settings.defaultProjectPathDescription")}</p>
       <form
-        className="settings-default-cwd"
+        className="settings-default-project"
         onSubmit={(event) => {
           event.preventDefault();
           if (dirty) void save(path);
         }}
       >
-        <div className="settings-default-cwd-row">
+        <div className="settings-default-project-row">
           <input
-            id="settings-default-cwd"
-            className="settings-default-cwd-input"
+            id="settings-default-project"
+            className="settings-default-project-input"
             type="text"
             value={path}
             placeholder={placeholder}
             spellCheck={false}
             autoComplete="off"
-            aria-label={t("settings.defaultDirectory")}
+            aria-label={t("settings.defaultProjectPath")}
             disabled={saving}
             onChange={(event) => {
               setPath(event.target.value);
@@ -164,7 +164,7 @@ function DefaultDirectorySettings() {
             {t("settings.browseDirectory")}
           </ConfigButton>
         </div>
-        <div className="settings-default-cwd-actions">
+        <div className="settings-default-project-actions">
           <ConfigButton variant="primary" size="small" disabled={saving || !dirty} onClick={() => void save(path)}>
             {saving ? t("i18n.saving") : t("i18n.save")}
           </ConfigButton>
@@ -172,8 +172,8 @@ function DefaultDirectorySettings() {
             variant="ghost"
             size="small"
             className="settings-chat-reset"
-            title={t("settings.resetDefaultDirectory")}
-            aria-label={t("settings.resetDefaultDirectory")}
+            title={t("settings.resetDefaultProjectPath")}
+            aria-label={t("settings.resetDefaultProjectPath")}
             disabled={saving || !canReset}
             onClick={() => void save("")}
           >
@@ -184,7 +184,7 @@ function DefaultDirectorySettings() {
         </div>
       </form>
       {resolved && (
-        <p className="settings-default-cwd-resolved">{t("settings.defaultDirectoryResolved", { path: resolved })}</p>
+        <p className="settings-default-project-resolved">{t("settings.defaultProjectPathResolved", { path: resolved })}</p>
       )}
       {status && <p role="status" className="settings-general-status">{status}</p>}
       {error && <p role="alert" className="settings-general-error">{error}</p>}
@@ -409,7 +409,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         </div>
       </section>
 
-      <DefaultDirectorySettings />
+      <DefaultProjectSettings />
 
       {shellSettings?.isWindows && (
         <section className="settings-general-section">

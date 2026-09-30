@@ -1,9 +1,4 @@
-import { existsSync } from "fs";
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
-import {
-  readDefaultCwdPath,
-  resolveDefaultCwdPath,
-} from "./default-cwd";
 import { isExistingPathWithinRoots, isPathWithinRoots } from "./path-security";
 import { listAllSessions } from "./session-reader";
 export { allowFileRoot, normalizeSlashes } from "./allowed-roots";
@@ -31,15 +26,6 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
     // The project root (main repo shared by all worktrees) is browsable too —
     // the project dropdown lists it even when only worktrees have sessions.
     if (s.projectRoot) roots.add(normalizeSlashes(s.projectRoot));
-  }
-
-  // The directory configured for "Use default directory" stays browsable before
-  // the sidebar selects it; selecting it still runs /api/cwd/validate (#996).
-  try {
-    const configured = resolveDefaultCwdPath(readDefaultCwdPath());
-    if (existsSync(configured)) roots.add(normalizeSlashes(configured));
-  } catch {
-    // ignore a missing or damaged pi-web.json
   }
 
   for (const root of getAdditionalAllowedRoots()) roots.add(root);

@@ -148,12 +148,12 @@ test("keeps password authentication to one login field and one settings action",
   assert.match(globalCssSource, /\.web-login-composer \{[\s\S]*?display: flex;[\s\S]*?border-radius: 14px/);
 });
 
-test("lets users customize the sidebar default directory from General settings", () => {
-  assert.match(panelSource, /function DefaultDirectorySettings\(/);
-  assert.match(panelSource, /<DefaultDirectorySettings \/>/);
-  assert.match(panelSource, /fetch\("\/api\/default-cwd"\)/);
+test("lets users customize the default project directory from General settings", () => {
+  assert.match(panelSource, /function DefaultProjectSettings\(/);
+  assert.match(panelSource, /<DefaultProjectSettings \/>/);
+  assert.match(panelSource, /fetch\("\/api\/default-project"\)/);
   assert.match(panelSource, /method: "PUT"/);
   assert.match(panelSource, /<DirectoryPicker/);
-  assert.match(enSource, /"settings\.defaultDirectory": "Default directory"/);
-  assert.match(cssSource, /\.settings-default-cwd-input \{/);
+  assert.match(enSource, /"settings\.defaultProjectPath": "Default project directory"/);
+  assert.match(cssSource, /\.settings-default-project-input \{/);
 });

@@ -15,7 +15,7 @@ export interface ShellToolSettingsResponse {
   powerShellEnabled: boolean;
 }
 
-export interface DefaultCwdSettingsResponse {
+export interface DefaultProjectSettingsResponse {
   path: string;
   resolved: string;
   placeholder: string;
