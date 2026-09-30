@@ -4,6 +4,8 @@
 
 This checkout is a thin fork of upstream Pi Web. Its purpose is to **stay as close to upstream as possible while making small additions or removals of features**. Keep changes minimal and localized: do not restructure upstream code, and follow upstream conventions so future syncs stay trivial. The `demo/` directory is a synced copy of the UI and is intentionally left untouched until a sync brings changes over.
 
+Upstream PR decisions live in `PRS.md`, written by `scripts/prs.sh` (`sync` / `list` / `show` / `take` / `drop` / `mark`). It is a divergence ledger, not a history: it lists only the PRs where we differ from upstream, so a PR that is merged upstream and already synced with us loses its row instead of being kept as a record.
+
 ### Known failing tests (intentionally kept)
 
 `npm test` currently reports 6 failures. They reproduce on a clean upstream checkout and are deliberately left alone to keep the fork aligned with upstream — **do not re-run, investigate, or "fix" them in a session**:
