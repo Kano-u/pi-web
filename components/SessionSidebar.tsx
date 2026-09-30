@@ -14,6 +14,7 @@ import { useLocalFileManagerAvailable } from "@/hooks/useLocalFileManager";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { DirectoryPicker } from "./DirectoryPicker";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { SessionSearch } from "./SessionSearch";
 
@@ -401,6 +402,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [customPathValue, setCustomPathValue] = useState(loadLastCustomCwd);
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newProjectError, setNewProjectError] = useState<string | null>(null);
+  const [newProjectBusy, setNewProjectBusy] = useState(false);
+  const [newProjectDefaultPath, setNewProjectDefaultPath] = useState<string | null>(null);
   const [validatedProject, setValidatedProject] = useState<ValidatedProject | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   // Worktree switcher state
@@ -905,6 +910,44 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setCustomPathError(null);
     setDropdownOpen(false);
   }, []);
+  // 新建项目：先解析默认目录用于展示，再让用户在弹窗里输入名称。
+  const handleNewProjectClick = useCallback(async () => {
+    setNewProjectOpen(true);
+    setNewProjectError(null);
+    setNewProjectDefaultPath(null);
+    setDropdownOpen(false);
+    try {
+      const res = await fetch("/api/default-cwd");
+      const data = await res.json().catch(() => ({})) as { projectBase?: string };
+      setNewProjectDefaultPath(data.projectBase ?? null);
+    } catch {
+      // 解析失败时仍允许输入，提交会再次解析默认目录。
+    }
+  }, []);
+
+  const commitNewProject = useCallback(async (name: string) => {
+    if (newProjectBusy) return;
+    setNewProjectBusy(true);
+    setNewProjectError(null);
+    try {
+      const res = await fetch("/api/default-cwd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
+      if (!res.ok || data.error || !data.cwd) {
+        setNewProjectError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setNewProjectOpen(false);
+      await commitCustomPath(data.cwd);
+    } catch (e) {
+      setNewProjectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNewProjectBusy(false);
+    }
+  }, [newProjectBusy, commitCustomPath]);
   const handleDefaultCwd = useCallback(async () => {
     try {
       const res = await fetch("/api/default-cwd", { method: "POST" });
@@ -1126,6 +1169,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         "--sidebar-session-pane-height": `${sessionPaneResizer.width}px`,
       } as CSSProperties}
     >
+      {newProjectOpen && (
+        <NewProjectDialog
+          defaultPath={newProjectDefaultPath}
+          busy={newProjectBusy}
+          error={newProjectError}
+          onCancel={() => {
+            if (newProjectBusy) return;
+            setNewProjectOpen(false);
+            setNewProjectError(null);
+          }}
+          onSubmit={(name) => void commitNewProject(name)}
+        />
+      )}
       {customPathOpen && (
         <DirectoryPicker
           initialPath={customPathValue}
@@ -1151,9 +1207,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <div style={{ display: "flex", gap: 6 }}>
             <button
               type="button"
-              onClick={() => handleCustomPathClick()}
-              title={t("sidebar.customPath")}
-              aria-label={t("sidebar.customPath")}
+              onClick={() => void handleNewProjectClick()}
+              title={t("sidebar.newProject")}
+              aria-label={t("sidebar.newProject")}
               className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[7px] border border-border bg-bg-hover text-text-muted hover:bg-bg-selected hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

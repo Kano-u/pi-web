@@ -1,10 +1,13 @@
 import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { allowFileRoot } from "@/lib/file-access";
+import { validateEntryName } from "@/lib/file-mutations";
 import {
   DEFAULT_CWD_TEMPLATE,
   readDefaultCwdPath,
   resolveDefaultCwdPath,
+  resolveDefaultProjectBasePath,
   writeDefaultCwdPath,
 } from "@/lib/default-cwd";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
@@ -32,12 +35,16 @@ export async function GET() {
   try {
     const path = readDefaultCwdPath();
     try {
-      return NextResponse.json(settingsResponse(path));
+      return NextResponse.json({
+        ...settingsResponse(path),
+        projectBase: resolveDefaultProjectBasePath(path),
+      });
     } catch (error) {
       return NextResponse.json({
         path,
         resolved: "",
         placeholder: DEFAULT_CWD_TEMPLATE,
+        projectBase: "",
         error: errorMessage(error),
       });
     }
@@ -77,10 +84,27 @@ export async function POST(req: Request) {
   }
 
   try {
-    const cwd = resolveDefaultCwdPath(readDefaultCwdPath());
-    mkdirSync(cwd, { recursive: true });
-    allowFileRoot(cwd);
-    return NextResponse.json({ cwd });
+    const configured = readDefaultCwdPath();
+    const defaultCwd = resolveDefaultCwdPath(configured);
+
+    // 可选 body { name }：在项目落点（默认目录以 {date} 结尾时取其父级，否则取默认
+    // 目录本身）下新建或复用项目文件夹并返回它；没有 name 时维持原行为。
+    const body = await req.json().catch(() => null) as { name?: unknown } | null;
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      mkdirSync(defaultCwd, { recursive: true });
+      allowFileRoot(defaultCwd);
+      return NextResponse.json({ cwd: defaultCwd });
+    }
+
+    const nameError = validateEntryName(name);
+    if (nameError) {
+      return NextResponse.json({ error: nameError }, { status: 400 });
+    }
+    const projectCwd = join(resolveDefaultProjectBasePath(configured), name);
+    mkdirSync(projectCwd, { recursive: true });
+    allowFileRoot(projectCwd);
+    return NextResponse.json({ cwd: projectCwd });
   } catch (error) {
     const message = errorMessage(error);
     return NextResponse.json({ error: message }, { status: clientErrorStatus(message) });

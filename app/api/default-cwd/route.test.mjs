@@ -90,3 +90,46 @@ test("rejects untrusted mutating requests", async () => {
   }));
   assert.equal(response.status, 403);
 });
+
+test("POST with a name creates a project folder inside the default directory", async () => {
+  const base = join(root, "projects");
+  await PUT(request("PUT", { path: base }));
+
+  let response = await POST(request("POST", { name: "project123" }));
+  let body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { cwd: join(base, "project123") });
+  assert.equal((await stat(join(base, "project123"))).isDirectory(), true);
+
+  // 同名目录直接复用，不报错。
+  response = await POST(request("POST", { name: "project123" }));
+  body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { cwd: join(base, "project123") });
+
+  await PUT(request("PUT", { path: "" }));
+});
+
+test("POST rejects a project name containing a path separator", async () => {
+  const base = join(root, "projects-bad");
+  await PUT(request("PUT", { path: base }));
+  const response = await POST(request("POST", { name: "../escape" }));
+  assert.equal(response.status, 400);
+  await PUT(request("PUT", { path: "" }));
+});
+
+test("POST puts the project beside a date-templated default directory", async () => {
+  const base = join(root, "chatgpt");
+  await PUT(request("PUT", { path: join(base, "pi-cwd-{date}") }));
+
+  const settings = await (await GET()).json();
+  assert.equal(settings.projectBase, base);
+
+  const response = await POST(request("POST", { name: "project123" }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { cwd: join(base, "project123") });
+  assert.equal((await stat(join(base, "project123"))).isDirectory(), true);
+
+  await PUT(request("PUT", { path: "" }));
+});

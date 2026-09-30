@@ -54,6 +54,20 @@ export function resolveDefaultCwdPath(
   return resolve(expanded);
 }
 
+/**
+ * 新建项目的落点。默认目录若以日期模板结尾（如 `~/pi-cwd-{date}`），它是按天生成的
+ * 临时目录，项目应当与它同级；否则直接把配置的默认目录本身当作项目落点。
+ */
+export function resolveDefaultProjectBasePath(
+  configured: string,
+  options: ResolveDefaultCwdOptions = {},
+): string {
+  const resolved = resolveDefaultCwdPath(configured, options);
+  const template = configured.trim() || DEFAULT_CWD_TEMPLATE;
+  const lastSegment = template.split(/[\\/]/).pop() ?? "";
+  return lastSegment.includes("{date}") ? dirname(resolved) : resolved;
+}
+
 function readStoredSettings(settingsPath: string): StoredPiWebSettings {
   if (!existsSync(settingsPath)) return {};
   const parsed: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
