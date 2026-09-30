@@ -83,7 +83,7 @@ function DefaultDirectorySettings() {
   const [path, setPath] = useState("");
   const [savedPath, setSavedPath] = useState("");
   const [resolved, setResolved] = useState("");
-  const [placeholder, setPlaceholder] = useState("~/pi-cwd-{date}");
+  const [placeholder, setPlaceholder] = useState("~/pi-cwd/{date}");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
