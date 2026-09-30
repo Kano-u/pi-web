@@ -979,10 +979,14 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           // so it shows its scrollbar instead of hiding it behind the minimap (#788).
           // A stable gutter keeps the centred column from shifting when a short
           // session grows past one screen.
-          className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 [scrollbar-gutter:stable]"
+          className="scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
           style={{ visibility: pendingScrollRestore ? "hidden" : undefined }}
         >
-          <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+          {/* The list's top inset lives here rather than on the scroll container:
+              a sticky offset is measured from the scrollport, and padding up
+              there leaves a strip above a pinned tool-call header that content
+              keeps scrolling through instead of disappearing behind it. */}
+          <div style={{ minWidth: 0, padding: `1rem ${CHAT_COLUMN_PADDING}px 0` }}>
             <div ref={messageContentRef} onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             {(() => {
               let lastUserIdx = -1;

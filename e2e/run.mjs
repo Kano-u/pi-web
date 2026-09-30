@@ -12,6 +12,7 @@ import { chromium } from "playwright";
 import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
 import { checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
+import { checkToolCardSticky } from "./tool-card-sticky.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.env.E2E_SERVER_MODE || "dev";
@@ -32,6 +33,7 @@ const BRANCH = "e2e-branch-session";
 const RICH = "e2e-rich-session";
 const COMPACTED = "e2e-compacted-session";
 const APPEND = "e2e-external-append-session";
+const TALL = "e2e-tall-tool-card";
 const text = (i) => `E2E message ${String(i).padStart(4, "0")}`;
 const ids = (start, end) => Array.from({ length: end - start }, (_, i) => `e${start + i}`);
 
@@ -125,6 +127,22 @@ try {
     message("root", null, "user", "E2E wrapper root"),
     message("reply", "root", "assistant", "E2E wrapper reply"),
   ]);
+  // A tool call whose arguments wrap into a pane taller than the viewport, so the
+  // header can be scrolled far enough to pin. See e2e/tool-card-sticky.mjs.
+  const tallScript = Array.from({ length: 240 }, (_, i) => `echo "E2E script line ${i + 1}"`).join("\n");
+  const tallResult = message("result", "call", "toolResult", [{ type: "text", text: "E2E tall output\n".repeat(40) }]);
+  Object.assign(tallResult.message, { toolCallId: "tall1", toolName: "bash", isError: false });
+  writeSession(TALL, [
+    message("user", null, "user", "E2E tall tool card"),
+    message("call", "user", "assistant", [
+      { type: "toolCall", id: "tall1", name: "bash", arguments: { command: tallScript } },
+    ]),
+    tallResult,
+    message("answer", "result", "assistant", [{ type: "text", text: "E2E tall card answer" }]),
+    // A folded card leaves the list shorter than the viewport, and a list that no
+    // longer scrolls clamps to 0 instead of holding the header in place.
+    message("tail", "answer", "assistant", [{ type: "text", text: "E2E trailing paragraph.\n\n".repeat(40) }]),
+  ]);
 
   const probe = createServer();
   probe.listen(0, "127.0.0.1");
@@ -166,7 +184,7 @@ try {
     const response = await fetch(`${base}/api/sessions`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok) {
       const { sessions } = await response.json();
-      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND].sort());
+      assert.deepEqual(sessions.map((session) => session.id).sort(), [LONG, BRANCH, RICH, COMPACTED, APPEND, TALL].sort());
       break;
     }
     assert.ok(Date.now() < deadline, "Server readiness timed out; see server.log");
@@ -405,6 +423,8 @@ try {
       await page.locator(".markdown-code-block pre").waitFor();
       await checkChatAppearance(page);
     }
+    await page.goto(`${base}/?session=${TALL}`, { waitUntil: "domcontentloaded" });
+    await checkToolCardSticky(page, viewport);
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);
     await context.tracing.stop();

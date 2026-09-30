@@ -163,7 +163,7 @@ test("renders subagents as standard tool calls with only an extra session button
     onOpenSession() {},
   });
 
-  assert.match(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
+  assert.match(html, /class="tool-card"[^>]*data-error="false"/);
   assert.match(html, />Agent</);
   assert.match(html, />Explore</);
   assert.match(html, /aria-label="Open sub-agent session"/);
@@ -334,9 +334,11 @@ test("marks apply_patch returned failures as errors even when isError is unset",
     content: [block],
   }, { toolResults: new Map([[block.toolCallId, failed]]) });
 
-  assert.match(html, /border:1px solid rgba\(248,113,113,0\.45\)/);
+  // The card's error colours are the .tool-card rules' business; what this render
+  // carries is the mark they key off.
+  assert.match(html, /class="tool-card"[^>]*data-error="true"/);
   assert.match(html, />apply_patch</);
-  assert.doesNotMatch(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
+  assert.doesNotMatch(html, /class="tool-card"[^>]*data-error="false"/);
 });
 
 test("renders custom-message images as buttons that open a larger preview", () => {

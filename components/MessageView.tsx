@@ -13,6 +13,7 @@ import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
 import { isApplyPatchToolName, isEditToolName } from "@/lib/tool-names";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
+import { foldPanes } from "@/lib/fold-panes";
 import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
@@ -1040,12 +1041,39 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
 
 function ToolCallBlock({ block, result, duration, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSession?: (sessionId: string) => void }) {
   const { t } = useI18n();
+  // The reader's state, which the chevron follows right away. `expanded` trails
+  // it while the panes fold away, so the collapse animation still has content to
+  // animate and unmounts it only once it has reached zero height.
   const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
+  const [open, setOpen] = useState(expanded);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const finishFoldRef = useRef<(() => void) | null>(null);
   const toggleExpanded = () => {
-    const next = !expanded;
+    // A click that lands mid-fold finishes it instead of stacking animations.
+    finishFoldRef.current?.();
+    const card = headerRef.current?.parentElement ?? null;
+    const panes = card ? [...card.querySelectorAll<HTMLElement>("[data-tool-pane]")] : [];
+    const next = !open;
+    setOpen(next);
     setToolCallExpanded(block.toolCallId, next);
-    setExpanded(next);
+    if (next) {
+      // A finished fold and a reopen batch into one render, so the panes are given
+      // their own height back rather than the height the fold had reached.
+      for (const pane of panes) pane.style.height = "";
+      setExpanded(true);
+      return;
+    }
+    finishFoldRef.current = foldPanes({
+      bar: headerRef.current,
+      panes,
+      onFinish: () => {
+        finishFoldRef.current = null;
+        setExpanded(false);
+      },
+    });
   };
+  // Leaving the card mid-fold must not leave a frame loop running.
+  useEffect(() => () => finishFoldRef.current?.(), []);
   const inputStr = getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
@@ -1065,19 +1093,31 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
 
+  // What the card shows below its header, and which of those sections fold away.
+  // Result images are not one of them: they are shown whether or not the details
+  // are open, so a fold has to leave them where they are.
+  const showsArgs = expanded && !patchFiles && (isStreamingInput || !isEditTool);
+  const showsPatch = expanded && Boolean(patchFiles);
+  const showsResult = expanded && Boolean(result) && !patchFiles
+    && (Boolean(resultDiff) || !resultIsEmpty || resultImages.length === 0);
+  const hasBody = showsArgs || showsPatch || showsResult || resultImages.length > 0;
   return (
     <div
-      style={{
-        borderRadius: 7,
-        overflow: "hidden",
-        fontSize: 12,
-        border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
-        background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
-      }}
+      className="tool-card"
+      data-expanded={expanded}
+      data-body={hasBody}
+      data-error={isError}
+      style={{ fontSize: 12 }}
     >
-      {/* ── Tool call header ── */}
-      <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
+      {/* ── Tool call header: the card's top edge, and what pins to the list ── */}
+      <div
+        ref={headerRef}
+        className="tool-card-header"
+        style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}
+      >
         <button
+          type="button"
+          aria-expanded={open}
           onClick={toggleExpanded}
           style={{
             display: "flex",
@@ -1103,7 +1143,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
           {duration !== undefined && (
             <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
           )}
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
             <polyline points="2 3.5 5 6.5 8 3.5" />
           </svg>
         </button>
@@ -1120,8 +1160,14 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
         )}
       </div>
 
+      {/* ── Everything below the header: the header draws the card's top edge and
+           this body draws the rest, so no border stays behind above a pinned
+           header. ── */}
+      {hasBody && (
+      <div className="tool-card-body">
       {/* ── Expanded: input args (only when no richer view exists) ── */}
-      {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
+      {showsArgs && (
+      <div data-tool-pane="">
         <pre
           style={{
             margin: 0,
@@ -1138,38 +1184,44 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
         >
           {inputStr}
         </pre>
+      </div>
       )}
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
       {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
 
-      {/* ── Expanded: applied-patch split diff ── */}
+      {/* ── Expanded: applied-patch split diff and its failure text ── */}
       {expanded && patchFiles && (
+      <div data-tool-pane="">
         <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
           <SplitFilesView files={patchFiles} />
         </div>
-      )}
-
-      {/* ── Paired result — only shown when expanded ── */}
-      {expanded && result && patchFiles && isError && (
-        <PairedResult
-          text={resultText ?? ""}
-          isEmpty={resultIsEmpty}
-          isError={isError}
-        />
-      )}
-      {expanded && result && !patchFiles && (
-        resultDiff ? (
-          <PairedDiffResult
-            diff={resultDiff}
-          />
-        ) : (!resultIsEmpty || resultImages.length === 0) && (
+        {result && isError && (
           <PairedResult
             text={resultText ?? ""}
             isEmpty={resultIsEmpty}
             isError={isError}
           />
-        )
+        )}
+      </div>
+      )}
+      {/* ── Paired result — only shown when expanded ── */}
+      {showsResult && (
+      <div data-tool-pane="">
+        {resultDiff ? (
+          <PairedDiffResult
+            diff={resultDiff}
+          />
+        ) : (
+          <PairedResult
+            text={resultText ?? ""}
+            isEmpty={resultIsEmpty}
+            isError={isError}
+          />
+        )}
+      </div>
+      )}
+      </div>
       )}
     </div>
   );
