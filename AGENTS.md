@@ -110,7 +110,7 @@ app/api/
   terminal/route.ts               POST create a terminal session
   terminal/[id]/route.ts          GET stream | POST input/resize | DELETE kill
   cwd/browse/route.ts             GET browse allowed cwd directories
-  open-folder/route.ts            POST reveal a folder or file in the OS file manager
+  open-in-explorer/route.ts       GET availability | POST open a cwd in the OS file manager (loopback only)
   app-update/route.ts             GET current vs latest published pi-web version
   file-index/route.ts             GET file list for @-mentions
   git/status/route.ts             GET changed files for a cwd
