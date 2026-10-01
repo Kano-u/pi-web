@@ -41,6 +41,15 @@ Typecheck: `node_modules/.bin/tsc --noEmit`
 Lint: `npm run lint`  
 **Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
 
+### Running on Bun (fork)
+
+`npm run dev:bun` / `npm run build:bun` / `npm run start:bun` run the Next CLI on Bun (`bun node_modules/next/dist/bin/next …`). Everything a normal session does works — pages, sessions, SSE, model lists, extension loading — and both halves of the production path were measured: `build:bun` finished in 50s (webpack 26s, TypeScript 11.4s) with only the `sessions/[id]/export` critical-dependency warning webpack also reports under Node, and `bun bin/pi-web.js -p 30145` then served every route with `/` in 88ms. Two Bun-runtime limitations are worth keeping in mind:
+
+- **Never add Bun flags to those scripts (`--no-install` especially).** Bun puts its own startup flags into `process.execArgv`, and Next forwards execArgv to the `node` processes Turbopack spawns for CSS and webpack loaders as `NODE_OPTIONS`. A flag Node does not know stops that child from starting (`node: --no-install is not allowed in NODE_OPTIONS`), Turbopack panics inside `evaluate_webpack_loader`, and `GET /` answers 500 after a multi-minute stall while every API route keeps working. Disabling auto-install is not worth that; see below for why it is not needed.
+- **The terminal tab does not work.** `node-pty`'s ConPTY write path silently does nothing under Bun: `pty.write()` reports success, the shell banner reaches the browser over SSE, but input never arrives at the shell. The same installed binary works under Node, so this is a Bun/ConPTY incompatibility rather than a pi-web bug. Use the plain Node scripts when a terminal is needed.
+- Bun's auto-install can pull a package into `~/.bun/install/cache` when an installed extension resolves a host package (`@earendil-works/pi-coding-agent`) natively instead of through the SDK's jiti aliases; that copy then fails on its own `@earendil-works/pi-ai/compat` import. Observed once: a 2.1-minute `/api/models` and an `unhandledRejection`, with every extension still loading. Ordinary toggles were 3.6s on a cold start, so it is left alone until it repeats.
+- Scoop installs Bun behind a 32-bit `shim.exe` launcher, which stays in the process list for the life of the run and is what Task Manager labels "32-bit". `bun.exe` itself is x86-64; the real binary is `~/scoop/apps/bun/current/bun.exe`.
+
 ### Dev server troubleshooting
 
 - Before starting a server, run `lsof -nP -iTCP:30141 -sTCP:LISTEN` and reuse the existing Pi Web process when it is healthy. A second `next dev` for the same checkout cannot use a different port as a workaround because both processes contend for `.next/dev/lock`.
