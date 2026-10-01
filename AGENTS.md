@@ -19,6 +19,16 @@ Upstream PR decisions live in `PRS.md`, written by `scripts/prs.sh` (`sync` / `l
 
 Everything else in the suite is expected to pass; a new failure is a real regression.
 
+### Fork-only additions (not in upstream)
+
+Unlike `demo/`, these exist only in this fork. A sync can never bring them in, but it can conflict with them, and `PRS.md` records the PR-level reason where a PR is behind one. Keep this list current: a fork-only file that is not named here is one a future sync cannot reason about.
+
+- **Explorer file management (`#899`)** — create, rename, delete, touch, mkdir, download, in-place edit, extract and compress. `lib/file-mutations.ts` (name validation, real-parent resolution, the allow-root-checked create/rename/delete/write paths), `lib/file-archives.ts` + `lib/archive-names.ts` (bsdtar extract and zip), the mutation branch of `POST /api/files/[...path]`, and the context menu, inline rename and inline create rows of `components/FileExplorer.tsx`, the editor in `components/FileViewer.tsx`, and the `onFileMutated` refresh wiring in `components/AppShell.tsx`. Upstream closed the PR as out of a thin frontend's scope, so `PRS.md` keeps its row.
+- **New project directory setting (`#892`)** — `lib/default-project.ts` and `GET`/`PUT`/`POST /api/default-project` own `defaultProjectPath` in `~/.pi/agent/pi-web.json`; the sidebar's "New project" entry, `components/NewProjectDialog.tsx` and the *Default project directory* field in `components/SettingsPanel.tsx` (with `app/settings.css`) drive it. It layers on upstream's dated `/api/default-cwd` and never touches that route.
+- **Directory picker sorting** — `mtimeMs` on `BrowsableDirectoryEntry` in `lib/directory-browser.ts`, the sort buttons in `components/DirectoryPicker.tsx`, and the custom-path entry point in `components/SessionSidebar.tsx`.
+- **Pinned card accordion** — `lib/fold-panes.ts`, `hooks/usePinnedCard.ts`, `components/PinnedCard.tsx`, `components/ThinkingCard.tsx`, `lib/thinking-content.ts`, the `.pin-card*` rules in `app/globals.css`, the message-list inset in `components/ChatWindow.tsx`, and the `e2e/tool-card-sticky.mjs` / `e2e/thinking-card-sticky.mjs` checks wired into `e2e/run.mjs`. `MessageView.tsx` reaches `ThinkingCard` through a one-line delegate precisely so that file's diff against upstream stays small, which is also why the delegate is the only thing there worth changing.
+- **Fork docs, ledger and checkout hygiene** — `PRS.md` + `scripts/prs.sh` (the divergence ledger introduced above), `README.YouMustRead.md`, the `#899` file tools the four `README*.md` files advertise, and `.gitattributes` (`* text=auto eol=lf`), which pins the working copy to LF so a Windows checkout cannot turn newline-sensitive comparisons into failures that CI does not see.
+
 ---
 
 ## Quick Start
@@ -130,6 +140,9 @@ lib/
   default-project.ts   default project directory for "New project" (~/.pi/agent/pi-web.json)
   file-paths.ts        client/server path encoding helpers
   file-tree-visibility.ts  which entries the file tree lists: git check-ignore, name-list fallback
+  file-mutations.ts    explorer create/rename/delete/write behind the allow-root checks (#899)
+  file-archives.ts     bsdtar extract and zip for the explorer (#899)
+  archive-names.ts     archive detection and bsdtar argv for file-archives.ts (#899)
   fold-panes.ts        height + scroll loop that folds a tool card into its header
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
@@ -158,6 +171,8 @@ components/
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
   MarkdownBody.tsx    markdown renderer
+  PinnedCard.tsx      shared pin/fold shell behind the tool-call and thinking cards
+  ThinkingCard.tsx    one thinking block rendered as a pinned card
   ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
@@ -167,6 +182,7 @@ components/
   FileIcons.tsx       file icon helpers
   FileViewer.tsx      file content in a tab
   TabBar.tsx          tab bar (Chat + open file tabs)
+  NewProjectDialog.tsx  names the folder that "New project" creates under the default project directory
 
 hooks/
   useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
