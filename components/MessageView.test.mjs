@@ -491,3 +491,80 @@ test("uses the unanswered truncation notice for an empty length reply", () => {
   assert.match(html, /nearly full context/i);
   assert.doesNotMatch(html, /follow-up/i);
 });
+
+test("labels a running shell call with the timeout it was given in minutes and seconds", () => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-bash-1",
+    toolName: "bash",
+    input: { command: "npm run dev", timeout: 90 },
+  };
+  // Pi streams a running shell tool's output as a partial result, which carries
+  // no timestamp: that is what makes the card read as unfinished.
+  const partial = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    toolName: "bash",
+    content: [{ type: "text", text: "starting..." }],
+  };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [block],
+    timestamp: 1_000_000,
+  }, { toolResults: new Map([[block.toolCallId, partial]]) });
+
+  assert.match(html, /timeout 1m 30s/);
+});
+
+test("replaces the timeout with the elapsed duration once the shell call reports back", () => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-bash-2",
+    toolName: "bash",
+    input: { command: "npm run build", timeout: 600 },
+  };
+  const result = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    toolName: "bash",
+    content: [{ type: "text", text: "done" }],
+    timestamp: 1_000_125_000,
+  };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [block],
+    timestamp: 1_000_000_000,
+  }, { toolResults: new Map([[block.toolCallId, result]]) });
+
+  assert.match(html, /2m 5s/);
+  assert.doesNotMatch(html, /timeout/);
+});
+
+test("shows a shell timeout on a call that never reported a result at all", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [{ type: "toolCall", toolCallId: "call-ps-1", toolName: "powershell", input: { command: "Get-ChildItem", timeout: 30 } }],
+    timestamp: 1_000_000,
+  });
+
+  assert.match(html, /timeout 30s/);
+});
+
+test("leaves the timeout argument of a non-shell tool out of the header", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [{ type: "toolCall", toolCallId: "call-read-1", toolName: "read", input: { path: "/tmp/a.ts", timeout: 30 } }],
+    timestamp: 1_000_000,
+  });
+
+  assert.match(html, /a\.ts/);
+  assert.doesNotMatch(html, /timeout/);
+});

@@ -11,7 +11,8 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
-import { isApplyPatchToolName, isEditToolName } from "@/lib/tool-names";
+import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName } from "@/lib/tool-names";
+import { formatDurationLabel } from "@/lib/duration-format";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
 import { usePinnedCard } from "@/hooks/usePinnedCard";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
@@ -961,6 +962,16 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
     ? summarizeApplyPatchInput(block)
     : null;
 
+  // A shell call that has not reported back yet: the duration slot below stays
+  // empty until it does, so it shows the timeout the command was given instead.
+  // Pi streams a running shell tool's output as a partial result with no
+  // timestamp, and the duration is derived from that timestamp, so a result
+  // without one is exactly a call that is still running.
+  const shellTimeout = isShellToolName(block.toolName) ? getShellTimeout(block.input) : null;
+  const shellTimeoutLabel = shellTimeout !== null && !result?.timestamp
+    ? t("chat.toolTimeout", { duration: formatDurationLabel(shellTimeout) })
+    : null;
+
   // Result display
   const resultText = result
     ? result.content.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
@@ -1015,7 +1026,10 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
               {isStreamingInput ? t("chat.generatingToolInput") : (patchLabel ?? getToolPreview(block))}
             </span>
             {duration !== undefined && (
-              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
+            )}
+            {shellTimeoutLabel !== null && (
+              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{shellTimeoutLabel}</span>
             )}
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
               <polyline points="2 3.5 5 6.5 8 3.5" />

@@ -32,3 +32,27 @@ export function isApplyPatchToolName(toolName: string): boolean {
     name.endsWith(".apply_patch") ||
     name.endsWith("_apply_patch");
 }
+
+/**
+ * Pi's two built-in shell tools. They are the only tools whose `timeout`
+ * argument bounds how long the call may still run, so the chat views label a
+ * running one with the limit it was given. Matched by exact name: a tool that
+ * merely ends in `_bash` is not pi's shell tool and carries no such schema.
+ */
+export function isShellToolName(toolName: string): boolean {
+  const name = toolName.toLowerCase();
+  return name === "bash" || name === "powershell";
+}
+
+/**
+ * The `timeout` argument (in seconds) a shell call was given, or null when
+ * it has none. Pi rejects a non-positive or non-finite value before running
+ * the command, so anything else is not a limit worth showing.
+ */
+export function getShellTimeout(input: unknown): number | null {
+  if (!input || typeof input !== "object") return null;
+  const timeout = (input as { timeout?: unknown }).timeout;
+  return typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0
+    ? timeout
+    : null;
+}

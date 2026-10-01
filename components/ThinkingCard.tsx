@@ -7,6 +7,7 @@ import { PinnedCard } from "./PinnedCard";
 import { useI18n } from "@/hooks/useI18n";
 import { usePinnedCard } from "@/hooks/usePinnedCard";
 import { getThinkingPreview } from "@/lib/message-display";
+import { formatDurationLabel } from "@/lib/duration-format";
 import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
 import { loadThinkingContent } from "@/lib/thinking-content";
 import type { ThinkingContent } from "@/lib/types";
@@ -123,7 +124,7 @@ export function ThinkingCard({ block, duration, sessionId, entryId, blockIndex }
             {!open && (preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "...")}
           </span>
           {duration !== undefined && (
-            <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+            <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
           )}
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
             <polyline points="2 3.5 5 6.5 8 3.5" />
