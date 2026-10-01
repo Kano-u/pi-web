@@ -132,6 +132,7 @@ lib/
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
   markdown.ts          shared markdown helpers
+  gfm-autolink-email-loader.cjs  bundler loader: remark-gfm's email regex without a lookbehind literal (#753)
   node-cli.ts          locate bundled npm-cli.js / npx-cli.js so npm/npx spawn without a shell (Windows npm.cmd)
   open-in-file-manager.ts  platform command + loopback check for /api/open-in-explorer
   npx.ts               npx runner used by skill install
@@ -181,6 +182,7 @@ hooks/
 - One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
 - `globalThis` survives Next.js hot-reload; plain module-level Map does not
 - Idle timeout: 10 minutes by default (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables). Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
+- Stop cannot cancel an SDK run that awaits a promise ignoring the abort signal (a third-party extension handler or tool): `inner.abort()` never returns and the session keeps reporting running. Stop (`abort`, and `abort_bash` likewise) therefore sets `forceShutdownOnIdle` and arms the idle timer, which shuts the wrapper down one idle timeout after the first Stop even though it is still running, so the session recovers without a server restart. Commands that arrive meanwhile — a reload's `get_tools`, Stop pressed again — keep that deadline instead of pushing it back, or a user retrying would keep the stuck run alive. With `PI_WEB_IDLE_TIMEOUT_MS=0` the timer still arms after Stop, at the 10-minute default (#656).
 
 ### Fork must destroy the wrapper immediately
 `AgentSession.fork()` **mutates the wrapper's inner state in-place** — after fork, `inner.sessionId` is the *new* session's id. If the wrapper stays alive in the registry under the old id, the next request gets the already-forked state and subsequent forks produce a corrupt `parentSession` chain.
@@ -299,12 +301,21 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - API-key routes store and remove keys through `AuthStorage`. Status endpoints must never return the raw key.
 - The model test route is `app/api/models-config/test/route.ts`; `app/api/models/test/` is not a real route.
 
+### Mobile software keyboard (`hooks/useViewportHeight.ts`)
+- While an editor has focus and the visual viewport is more than `KEYBOARD_MIN_HEIGHT_PX` (60px) shorter than `innerHeight / scale`, the hook writes `visualViewport.height` to `--app-viewport-height`. Compare against the zoom-corrected height: iOS auto-zoom and pinch zoom shrink the visual viewport on their own, and skipping zoomed pages left the composer behind the keyboard. Smaller shrinks are Safari toolbars.
+- WebKit settles the shrunken height only after the keyboard animation, often without another `resize` (bugs.webkit.org 265578), and an IME candidate bar resizes the keyboard with no viewport event at all. Every trigger therefore starts one non-restarting chain of re-reads (`SETTLE_DELAYS_MS`), and composition/input/keyup events on a focused editor count as triggers. Reading once per event kept the full-screen height; the page then scrolled to the caret and `scrollTo(0, 0)` fought the user's finger, which reads as a jittering composer.
+- The same check sets `<html data-keyboard-open>`. Under `(max-width: 640px), (pointer: coarse) and (max-height: 500px)` CSS then hides `.chat-input-controls` and `.extension-status-shelf` and drops the bottom safe-area padding the keyboard already covers. Phone landscape is included because it has the least height; tablets keep their controls. `MobilePwaLayout.test.mjs` asserts each targeted class exists on its component, so a rename cannot leave a rule silently dead.
+
 ### Completion sound
 - `hooks/useAudio.ts` stores the toggle in `localStorage` as `pi-sound-enabled` and reuses one `AudioContext`.
 - Browser autoplay policy means sound must be unlocked from a user gesture; `ChatInput` calls the unlock hook from interactive controls, and `ChatWindow` plays the tone from `onAgentEnd`.
 
 ### Exported session HTML
 - `/api/sessions/[id]/export` delegates to pi's export helper, then patches recursive tree helpers in the generated HTML to iterative versions so very deep linear sessions do not overflow the browser call stack.
+
+### Old Safari (iOS 16.2)
+- `/` renders entirely on the client, so one script chunk the browser cannot *parse* is a blank page, not a broken feature (#753). Next 16 compiles for Safari 16.4+ by default; the `browserslist` in `package.json` lowers Safari and iOS to 16.2 so SWC turns class `static {}` blocks into private static fields. That reaches Next's own client runtime, but other node_modules keep the syntax they ship unless they are in `transpilePackages`; mermaid and `@mermaid-js/parser` are listed there because their lazy diagram chunks are full of static blocks. Keep the other browserslist entries at Next's defaults.
+- SWC cannot downlevel a RegExp **lookbehind** (`(?<=`, `(?<!`), which Safari parses only from 16.4. Do not write one in client code: `lib/markdown.ts` emulates its leading lookbehinds with `replaceNotPrecededBy()`. A lookbehind built at runtime (`new RegExp("(?<=…)")` inside `try`) only fails when it runs, which is how `lib/gfm-autolink-email-loader.cjs` fixes the email regex in `mdast-util-gfm-autolink-literal`; the loader is registered for both webpack and Turbopack in `next.config.ts` and fails the build if that regex changes upstream.
 
 ## Pi Session File Format
 
