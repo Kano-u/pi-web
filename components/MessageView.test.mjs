@@ -72,6 +72,42 @@ test("previews the first thinking line and reveals the full text with the saved 
   }
 });
 
+test("renders an expanded thinking block as a pinned card with a foldable body", () => {
+  const previousWindow = globalThis.window;
+  try {
+    globalThis.window = { localStorage: { getItem: () => "true" } };
+    const html = renderToStaticMarkup(React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ThinkingBlock, {
+        block: { type: "thinking", thinking: "First line\n\nBody detail." },
+        blockIndex: 0,
+        duration: 2,
+      }),
+    ));
+    assert.match(html, /class="thinking-card pin-card"/);
+    assert.match(html, /class="pin-card-header"/);
+    assert.match(html, /class="pin-card-body"/);
+    assert.match(html, /data-pin-pane=""/);
+    assert.match(html, /aria-expanded="true"/);
+    assert.match(html, /2s/);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test("keeps the thinking body unmounted while collapsed", () => {
+  const html = renderMessage({
+    role: "assistant",
+    content: [{ type: "thinking", thinking: "Reasoning" }],
+  });
+  assert.match(html, /class="thinking-card pin-card"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /pin-card-body/);
+  assert.doesNotMatch(html, /data-pin-pane/);
+});
+
 test("shows deferred thinking previews without loading the full content", () => {
   const html = renderMessage({
     role: "assistant",
@@ -163,7 +199,7 @@ test("renders subagents as standard tool calls with only an extra session button
     onOpenSession() {},
   });
 
-  assert.match(html, /class="tool-card"[^>]*data-error="false"/);
+  assert.match(html, /class="tool-card pin-card"[^>]*data-error="false"/);
   assert.match(html, />Agent</);
   assert.match(html, />Explore</);
   assert.match(html, /aria-label="Open sub-agent session"/);
@@ -336,9 +372,9 @@ test("marks apply_patch returned failures as errors even when isError is unset",
 
   // The card's error colours are the .tool-card rules' business; what this render
   // carries is the mark they key off.
-  assert.match(html, /class="tool-card"[^>]*data-error="true"/);
+  assert.match(html, /class="tool-card pin-card"[^>]*data-error="true"/);
   assert.match(html, />apply_patch</);
-  assert.doesNotMatch(html, /class="tool-card"[^>]*data-error="false"/);
+  assert.doesNotMatch(html, /class="tool-card pin-card"[^>]*data-error="false"/);
 });
 
 test("renders custom-message images as buttons that open a larger preview", () => {

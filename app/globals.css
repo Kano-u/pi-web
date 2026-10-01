@@ -724,30 +724,36 @@ pre, code {
   --chat-font-size-offset: calc(var(--chat-content-font-size, 14px) - 14px);
 }
 
-/* ── Tool cards: a pinned title bar ───────────────────────────────────────────
-   An expanded tool card pins its title bar 8px below the top of the message
-   list, so a tall diff or output can be folded away again without scrolling
-   back up to a header that has left the viewport.
+/* ── Pinned cards: a title bar that sticks to the message list ────────────────
+   An expanded card pins its title bar 8px below the top of the message list, so
+   a tall diff, output or reasoning chain can be folded away again without
+   scrolling back up to a header that has left the viewport. Both cards carry the
+   shared `.pin-card`; `.tool-card` and `.thinking-card` only set the tint.
 
    The card's own box clips nothing and paints nothing: the header carries the
-   top edge and the top radii, and .tool-card-body the bottom ones, which keeps
-   the header's sticky containing block the message list. Both paint the card
-   tint composited over the page, so a pinned bar stays opaque while panes slide
+   top edge and the top radii, and the body the bottom ones, which keeps the
+   header's sticky containing block the message list. Both paint the card tint
+   composited over the page, so a pinned bar stays opaque while panes slide
    under it. The band below is page background in a block that takes up no net
    height: at rest it hides behind the header, and once the header pins it
    covers the 8px gap above it plus the part of its rounded top corners that
    shows through. */
 .tool-card {
-  --tool-card-border: rgba(34, 197, 94, 0.25);
+  --card-border: rgba(34, 197, 94, 0.25);
   /* The card tint composited over the page, which is what lets a pinned header
      hide the panes sliding under it. */
-  --tool-card-surface: color-mix(in srgb, #22c55e 4%, var(--bg));
+  --card-surface: color-mix(in srgb, #22c55e 4%, var(--bg));
 }
 .tool-card[data-error="true"] {
-  --tool-card-border: rgba(248, 113, 113, 0.45);
-  --tool-card-surface: color-mix(in srgb, #f87171 5%, var(--bg));
+  --card-border: rgba(248, 113, 113, 0.45);
+  --card-surface: color-mix(in srgb, #f87171 5%, var(--bg));
 }
-.tool-card[data-expanded="true"]::before {
+/* Thinking cards keep the plain surface and border the block always had. */
+.thinking-card {
+  --card-border: var(--border);
+  --card-surface: var(--bg);
+}
+.pin-card[data-expanded="true"]::before {
   content: "";
   display: block;
   position: sticky;
@@ -760,31 +766,31 @@ pre, code {
   margin-bottom: -14px;
   background: var(--bg);
 }
-.tool-card-header {
-  border: 1px solid var(--tool-card-border);
+.pin-card-header {
+  border: 1px solid var(--card-border);
   border-radius: 7px;
-  background: var(--tool-card-surface);
+  background: var(--card-surface);
 }
-.tool-card[data-body="true"] > .tool-card-header {
+.pin-card[data-body="true"] > .pin-card-header {
   /* The body draws the line between the two, so the header must not. */
   border-bottom: 0;
   border-radius: 7px 7px 0 0;
 }
-.tool-card[data-expanded="true"] > .tool-card-header {
+.pin-card[data-expanded="true"] > .pin-card-header {
   position: sticky;
   top: 8px;
   z-index: 2;
 }
-.tool-card-body {
-  border: 1px solid var(--tool-card-border);
+.pin-card-body {
+  border: 1px solid var(--card-border);
   border-top: 0;
   border-radius: 0 0 7px 7px;
-  background: var(--tool-card-surface);
+  background: var(--card-surface);
   /* Rounds the panes along the bottom edge; the card itself stays unclipped. */
   overflow: hidden;
 }
 /* Gets an explicit height that the collapse animation drives down to zero. */
-.tool-card-body [data-tool-pane] {
+.pin-card-body [data-pin-pane] {
   overflow: hidden;
 }
 

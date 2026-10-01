@@ -27,8 +27,8 @@ export async function checkToolCardSticky(page, viewport) {
   /** Everything the assertions need, measured against the message list itself. */
   const measure = () => card.evaluate((element) => {
     const list = element.closest(".overflow-y-auto");
-    const bar = element.querySelector(".tool-card-header");
-    const pane = element.querySelector("[data-tool-pane]");
+    const bar = element.querySelector(".pin-card-header");
+    const pane = element.querySelector("[data-pin-pane]");
     const box = (node) => {
       const rect = node.getBoundingClientRect();
       return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, height: rect.height };
@@ -48,7 +48,7 @@ export async function checkToolCardSticky(page, viewport) {
   }, delta);
 
   await header.click();
-  await page.locator("[data-tool-pane]").first().waitFor({ state: "visible" });
+  await page.locator("[data-pin-pane]").first().waitFor({ state: "visible" });
 
   const open = await measure();
   assert.ok(open.pane, "An expanded card renders its pane");
@@ -110,7 +110,7 @@ export async function checkToolCardSticky(page, viewport) {
     }
     const asPane = (point) => !!document
       .elementFromPoint(geometry.list.left + point.x, geometry.list.top + point.y)
-      ?.closest("[data-tool-pane]");
+      ?.closest("[data-pin-pane]");
     return {
       background,
       colors,
@@ -132,7 +132,7 @@ export async function checkToolCardSticky(page, viewport) {
 
   const before = pinned.list.scrollTop;
   await header.click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-tool-pane]").length === 0);
+  await page.waitForFunction(() => document.querySelectorAll("[data-pin-pane]").length === 0);
   const folded = await measure();
 
   assert.equal(await header.getAttribute("aria-expanded"), "false");
@@ -149,10 +149,10 @@ export async function checkToolCardSticky(page, viewport) {
   // keeps the header on screen, not an animation nicety.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await header.click();
-  await page.locator("[data-tool-pane]").first().waitFor({ state: "visible" });
+  await page.locator("[data-pin-pane]").first().waitFor({ state: "visible" });
   await pin(500);
   await header.click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-tool-pane]").length === 0);
+  await page.waitForFunction(() => document.querySelectorAll("[data-pin-pane]").length === 0);
   const reduced = await measure();
   assert.ok(
     Math.abs((reduced.bar.top - reduced.list.top) - 8) < 1.5,
@@ -165,15 +165,15 @@ export async function checkToolCardSticky(page, viewport) {
   // still carrying the height the fold had reached would stay folded behind a
   // chevron that says otherwise.
   await header.click();
-  await page.locator("[data-tool-pane]").first().waitFor({ state: "visible" });
+  await page.locator("[data-pin-pane]").first().waitFor({ state: "visible" });
   const box = await header.boundingBox();
   const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.click(middle.x, middle.y);
   await page.mouse.click(middle.x, middle.y);
   // Unreachable if the card came back folded behind an expanded chevron.
   await page.waitForFunction(() => {
-    const pane = document.querySelector("[data-tool-pane]");
-    const bar = document.querySelector(".tool-card-header button");
+    const pane = document.querySelector("[data-pin-pane]");
+    const bar = document.querySelector(".pin-card-header button");
     return bar?.getAttribute("aria-expanded") === "true" && !!pane && pane.getBoundingClientRect().height > 100;
   });
   const reopened = await measure();

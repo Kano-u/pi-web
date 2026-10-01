@@ -1,5 +1,5 @@
 /**
- * Folds a tool card's panes into its header.
+ * Folds a card's panes into its header.
  *
  * The panes' heights run down to zero while the message list scrolls by the same
  * amount, so a pinned header keeps the place it was pinned to and the blocks
@@ -10,8 +10,24 @@
  * arrives while it is still running.
  */
 
-/** Matches the fold's own timing; the panes and the list share one reading of it. */
-const DURATION_MS = 200;
+/** The shortest a fold runs; the panes and the list share one reading of it. */
+const MIN_DURATION_MS = 200;
+/** The longest a fold runs, so a tall card never feels sluggish. */
+const MAX_DURATION_MS = 400;
+/** At or below this distance a fold stays at MIN; at LONG_FOLD_DISTANCE it reaches MAX. */
+const SHORT_FOLD_DISTANCE = 150;
+const LONG_FOLD_DISTANCE = 640;
+
+/**
+ * The fold's distance is the panes' height or the list's compensating scroll,
+ * whichever is larger. Both grow with the card, so a fixed duration made a tall
+ * card rush and a short one crawl. Scaling the duration keeps the motion roughly
+ * constant in speed, while a short fold stays at MIN_DURATION_MS.
+ */
+function foldDuration(distance: number): number {
+  const progress = Math.min(1, Math.max(0, (distance - SHORT_FOLD_DISTANCE) / (LONG_FOLD_DISTANCE - SHORT_FOLD_DISTANCE)));
+  return MIN_DURATION_MS + (MAX_DURATION_MS - MIN_DURATION_MS) * progress;
+}
 
 /** Ease-out cubic: the fold starts fast and settles, like the height it drives. */
 function easeOut(progress: number): number {
@@ -53,6 +69,9 @@ export function foldPanes({ bar, panes, onFinish }: FoldOptions): () => void {
     ? Math.max(0, bar.getBoundingClientRect().top - card.getBoundingClientRect().top)
     : 0;
   const scrollFrom = scroller ? scroller.scrollTop : 0;
+  // The panes' combined height and the list's scroll-back both scale with the card.
+  const distance = Math.max(shift, heights.reduce((sum, height) => sum + height, 0));
+  const duration = foldDuration(distance);
 
   let finished = false;
   // A reader who wheels or taps mid-fold is scrolling on purpose: keep folding,
@@ -87,7 +106,7 @@ export function foldPanes({ bar, panes, onFinish }: FoldOptions): () => void {
   const started = performance.now();
   const frame = (now: number) => {
     if (finished) return;
-    const progress = Math.min(1, (now - started) / DURATION_MS);
+    const progress = Math.min(1, (now - started) / duration);
     const eased = easeOut(progress);
     for (let index = 0; index < panes.length; index += 1) {
       panes[index].style.height = `${heights[index] * (1 - eased)}px`;

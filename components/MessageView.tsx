@@ -1,20 +1,19 @@
 "use client";
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
-import { ThinkingIcon } from "./ThinkingIcon";
+import { ThinkingCard } from "./ThinkingCard";
+import { PinnedCard } from "./PinnedCard";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, getThinkingPreview, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
+import { getAssistantErrorMessage, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
 import { isApplyPatchToolName, isEditToolName } from "@/lib/tool-names";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
-import { foldPanes } from "@/lib/fold-panes";
-import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
+import { usePinnedCard } from "@/hooks/usePinnedCard";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -84,9 +83,6 @@ function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, te
   return baseTokens + estimateTokens(text.slice(suffixStart));
 }
 
-const MAX_THINKING_CACHE_ENTRIES = 100;
-const thinkingContentCache = new Map<string, Promise<string>>();
-
 // Messages larger than this skip markdown rendering entirely. react-markdown +
 // KaTeX + syntax highlighting on multi-hundred-KB payloads (e.g. pasted HAR or
 // log dumps) freezes the browser main thread.
@@ -152,35 +148,6 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
 // Cap the user "sent" bubble's height so an abnormally long message does not
 // push the conversation off screen; overflow scrolls inside the bubble.
 const USER_BUBBLE_MAX_HEIGHT = 300;
-
-function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
-  const key = `${sessionId}:${entryId}:${blockIndex}`;
-  const cached = thinkingContentCache.get(key);
-  if (cached) {
-    thinkingContentCache.delete(key);
-    thinkingContentCache.set(key, cached);
-    return cached;
-  }
-
-  const request = fetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
-  ).then(async (response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json() as { thinking?: unknown };
-    if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
-    return data.thinking;
-  }).catch((error) => {
-    thinkingContentCache.delete(key);
-    throw error;
-  });
-
-  thinkingContentCache.set(key, request);
-  if (thinkingContentCache.size > MAX_THINKING_CACHE_ENTRIES) {
-    const oldestKey = thinkingContentCache.keys().next().value;
-    if (oldestKey) thinkingContentCache.delete(oldestKey);
-  }
-  return request;
-}
 
 interface Props {
   message: AgentMessage;
@@ -925,112 +892,9 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   entryId?: string;
   blockIndex: number;
 }) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const tRef = useRef(t);
-  tRef.current = t;
-  const preview = getThinkingPreview(block.thinking);
-
-  // Keep already-mounted blocks in sync when the preference changes.
-  useEffect(() => {
-    const onChange = () => setExpanded(isThinkingExpandedByDefault());
-    window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
-    return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
-  }, []);
-
-  // Load deferred history content whenever the block is expanded.
-  // loadThinkingContent() memoizes in-flight promises and drops failed ones
-  // from its cache, so re-running this effect is cheap and a failed load can
-  // be retried by collapsing and expanding the block again.
-  useEffect(() => {
-    if (!expanded || !block.deferred || content !== null) return;
-    if (!sessionId || !entryId) {
-      setError(tRef.current("i18n.thinkingUnavailable"));
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    loadThinkingContent(sessionId, entryId, blockIndex)
-      .then((value) => {
-        if (!cancelled) {
-          setContent(value);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
-
-  return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
-      border: "1px solid var(--border)",
-      borderRadius: 7,
-      padding: "6px 10px",
-      background: "var(--bg)",
-      fontFamily: "var(--font-mono)",
-      fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
-      lineHeight: 1.5,
-    }}>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
-        title={t("i18n.thinking")}
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          width: expanded ? 14 : "100%",
-          flexShrink: expanded ? 0 : 1,
-          minWidth: 0,
-          minHeight: "1.5em",
-          padding: 0,
-          background: "transparent",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          font: "inherit",
-          textAlign: "left",
-        }}
-      >
-        <ThinkingIcon active={expanded} />
-        {!expanded && (
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
-          </span>
-        )}
-      </button>
-      {expanded && (
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            color: error ? "#f87171" : "var(--text-muted)",
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
-        >
-           {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
-        </div>
-      )}
-      {duration !== undefined && (
-        <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
-      )}
-    </div>
-  );
+  // The card lives in its own file so the pinned-card work stays out of
+  // MessageView's frequently-synced upstream code.
+  return <ThinkingCard block={block} duration={duration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
 }
 
 function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
@@ -1044,36 +908,10 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
   // The reader's state, which the chevron follows right away. `expanded` trails
   // it while the panes fold away, so the collapse animation still has content to
   // animate and unmounts it only once it has reached zero height.
-  const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
-  const [open, setOpen] = useState(expanded);
-  const headerRef = useRef<HTMLDivElement | null>(null);
-  const finishFoldRef = useRef<(() => void) | null>(null);
-  const toggleExpanded = () => {
-    // A click that lands mid-fold finishes it instead of stacking animations.
-    finishFoldRef.current?.();
-    const card = headerRef.current?.parentElement ?? null;
-    const panes = card ? [...card.querySelectorAll<HTMLElement>("[data-tool-pane]")] : [];
-    const next = !open;
-    setOpen(next);
-    setToolCallExpanded(block.toolCallId, next);
-    if (next) {
-      // A finished fold and a reopen batch into one render, so the panes are given
-      // their own height back rather than the height the fold had reached.
-      for (const pane of panes) pane.style.height = "";
-      setExpanded(true);
-      return;
-    }
-    finishFoldRef.current = foldPanes({
-      bar: headerRef.current,
-      panes,
-      onFinish: () => {
-        finishFoldRef.current = null;
-        setExpanded(false);
-      },
-    });
-  };
-  // Leaving the card mid-fold must not leave a frame loop running.
-  useEffect(() => () => finishFoldRef.current?.(), []);
+  const { open, expanded, headerRef, toggle } = usePinnedCard({
+    initiallyOpen: () => isToolCallExpanded(block.toolCallId),
+    onToggle: (next) => setToolCallExpanded(block.toolCallId, next),
+  });
   const inputStr = getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
@@ -1102,72 +940,64 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
     && (Boolean(resultDiff) || !resultIsEmpty || resultImages.length === 0);
   const hasBody = showsArgs || showsPatch || showsResult || resultImages.length > 0;
   return (
-    <div
-      className="tool-card"
-      data-expanded={expanded}
-      data-body={hasBody}
-      data-error={isError}
+    <PinnedCard
+      kind="tool"
+      headerRef={headerRef}
+      expanded={expanded}
+      hasBody={hasBody}
+      error={isError}
       style={{ fontSize: 12 }}
-    >
-      {/* ── Tool call header: the card's top edge, and what pins to the list ── */}
-      <div
-        ref={headerRef}
-        className="tool-card-header"
-        style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}
-      >
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={toggleExpanded}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            flex: 1,
-            minWidth: 0,
-            padding: "6px 10px",
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            fontSize: 12,
-            textAlign: "left",
-          }}
-        >
-          <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
-            {block.toolName}
-          </span>
-          <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {isStreamingInput ? t("chat.generatingToolInput") : (patchLabel ?? getToolPreview(block))}
-          </span>
-          {duration !== undefined && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
-          )}
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-            <polyline points="2 3.5 5 6.5 8 3.5" />
-          </svg>
-        </button>
-        {subagent && onOpenSession && (
+      header={
+        <>
           <button
             type="button"
-            onClick={() => onOpenSession(subagent.sessionId)}
-            title={t("subagent.open")}
-            aria-label={t("subagent.open")}
-            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+            aria-expanded={open}
+            onClick={toggle}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              flex: 1,
+              minWidth: 0,
+              padding: "6px 10px",
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              fontSize: 12,
+              textAlign: "left",
+            }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+            <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
+              {block.toolName}
+            </span>
+            <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+              {isStreamingInput ? t("chat.generatingToolInput") : (patchLabel ?? getToolPreview(block))}
+            </span>
+            {duration !== undefined && (
+              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+            )}
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+              <polyline points="2 3.5 5 6.5 8 3.5" />
+            </svg>
           </button>
-        )}
-      </div>
-
-      {/* ── Everything below the header: the header draws the card's top edge and
-           this body draws the rest, so no border stays behind above a pinned
-           header. ── */}
-      {hasBody && (
-      <div className="tool-card-body">
+          {subagent && onOpenSession && (
+            <button
+              type="button"
+              onClick={() => onOpenSession(subagent.sessionId)}
+              title={t("subagent.open")}
+              aria-label={t("subagent.open")}
+              style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+            </button>
+          )}
+        </>
+      }
+    >
       {/* ── Expanded: input args (only when no richer view exists) ── */}
       {showsArgs && (
-      <div data-tool-pane="">
+      <div data-pin-pane="">
         <pre
           style={{
             margin: 0,
@@ -1192,7 +1022,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
 
       {/* ── Expanded: applied-patch split diff and its failure text ── */}
       {expanded && patchFiles && (
-      <div data-tool-pane="">
+      <div data-pin-pane="">
         <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
           <SplitFilesView files={patchFiles} />
         </div>
@@ -1207,7 +1037,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
       )}
       {/* ── Paired result — only shown when expanded ── */}
       {showsResult && (
-      <div data-tool-pane="">
+      <div data-pin-pane="">
         {resultDiff ? (
           <PairedDiffResult
             diff={resultDiff}
@@ -1221,9 +1051,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
         )}
       </div>
       )}
-      </div>
-      )}
-    </div>
+    </PinnedCard>
   );
 }
 
