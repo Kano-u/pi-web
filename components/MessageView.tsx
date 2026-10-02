@@ -19,6 +19,9 @@ import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
+import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
+import { CodemodeCallList, CodemodeScript } from "./CodemodeToolView";
+import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
 import type {
   AgentMessage,
   UserMessage,
@@ -992,6 +995,15 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
   const patchLabel = isApplyPatchToolName(block.toolName)
     ? summarizeApplyPatchInput(block)
     : null;
+  // A script and the calls it made, instead of the input JSON. Streamed input is
+  // still incomplete JSON and keeps the generic view.
+  const codemodeCode = block.toolName === CODEMODE_TOOL_NAME && !isStreamingInput ? codemodeScript(block.input) : null;
+  const codemode = codemodeCode === null ? null : { code: codemodeCode, ...codemodeCalls(result?.details) };
+  // A running script's progress snapshot has calls but no content yet.
+  const codemodeRunning = codemode !== null && result !== undefined && result.content.length === 0;
+
+  // `server/tool` instead of the registered `mcp__server__tool`, as pi's TUI shows it.
+  const mcpLabel = mcpToolLabel(block.toolName, result?.details);
 
   // A shell call that has not reported back yet: the duration slot below stays
   // empty until it does, so it shows the timeout the command was given instead.
@@ -1004,23 +1016,27 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
     : null;
 
   // Result display
-  const resultText = result
-    ? result.content.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
+  const resultContent = result ? (codemode ? stripCodemodeHeader(result.content) : result.content) : [];
+  const joinedResultText = result
+    ? resultContent.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
     : null;
-  const resultImages = getMessageImages(result?.content ?? []);
+  const resultText = mcpLabel && joinedResultText !== null ? prettyMcpResultText(joinedResultText) : joinedResultText;
+  const resultImages = getMessageImages(resultContent);
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
+  const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
 
   // What the card shows below its header, and which of those sections fold away.
   // Result images are not one of them: they are shown whether or not the details
   // are open, so a fold has to leave them where they are.
-  const showsArgs = expanded && !patchFiles && (isStreamingInput || !isEditTool);
+  const showsCodemode = expanded && Boolean(codemode);
+  const showsArgs = expanded && !codemode && !patchFiles && (isStreamingInput || !isEditTool);
   const showsPatch = expanded && Boolean(patchFiles);
-  const showsResult = expanded && Boolean(result) && !patchFiles
+  const showsResult = expanded && Boolean(result) && !patchFiles && !codemodeRunning
     && (Boolean(resultDiff) || !resultIsEmpty || resultImages.length === 0);
-  const hasBody = showsArgs || showsPatch || showsResult || resultImages.length > 0;
+  const hasBody = showsArgs || showsCodemode || showsPatch || showsResult || resultImages.length > 0;
   return (
     <PinnedCard
       kind="tool"
@@ -1050,12 +1066,27 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
               textAlign: "left",
             }}
           >
-            <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
-              {block.toolName}
+            <span
+              title={mcpLabel ? block.toolName : undefined}
+              style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}
+            >
+              {mcpLabel ? (
+                <>
+                  <span style={{ fontWeight: 500, opacity: 0.75 }}>{mcpLabel.server}/</span>
+                  {mcpLabel.tool}
+                </>
+              ) : block.toolName}
             </span>
             <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-              {isStreamingInput ? t("chat.generatingToolInput") : (patchLabel ?? getToolPreview(block))}
+              {isStreamingInput
+                ? t("chat.generatingToolInput")
+                : (patchLabel ?? (codemode ? codemodeScriptPreview(codemode.code) : getToolPreview(block)))}
             </span>
+            {codemodeCallCount > 0 && (
+              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                {codemodeCallCount === 1 ? t("codemode.callCountOne") : t("codemode.callCount", { count: codemodeCallCount })}
+              </span>
+            )}
             {duration !== undefined && (
               <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
             )}
@@ -1080,6 +1111,14 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
         </>
       }
     >
+      {/* ── Expanded: codemode script and the calls it made ── */}
+      {showsCodemode && codemode && (
+      <div data-pin-pane="">
+        <CodemodeScript code={codemode.code} isError={isError} />
+        <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} isError={isError} />
+      </div>
+      )}
+
       {/* ── Expanded: input args (only when no richer view exists) ── */}
       {showsArgs && (
       <div data-pin-pane="">
@@ -1106,7 +1145,7 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
       {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
 
       {/* ── Expanded: applied-patch split diff and its failure text ── */}
-      {expanded && patchFiles && (
+      {showsPatch && patchFiles && (
       <div data-pin-pane="">
         <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
           <SplitFilesView files={patchFiles} />
