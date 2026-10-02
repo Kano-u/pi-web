@@ -27,6 +27,9 @@
 /.agents/
 /skills-lock.json
 
+# Plannotator plan-mode documents (local working notes, never part of a change)
+/plans/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
