@@ -669,7 +669,7 @@ test("keeps the registered name where no result names the server and tool", (t) 
   assert.match(textOf(html), /mcp__docs_v2__search_pages\{\}/);
 });
 
-test("labels a running shell call with the timeout it was given in minutes and seconds", () => {
+test("counts a running shell call down to the timeout it was given", () => {
   const block = {
     type: "toolCall",
     toolCallId: "call-bash-1",
@@ -684,18 +684,37 @@ test("labels a running shell call with the timeout it was given in minutes and s
     toolName: "bash",
     content: [{ type: "text", text: "starting..." }],
   };
+  // The countdown is measured from the assistant message's timestamp, so 30s
+  // into a 90s deadline there are 60s left.
   const html = renderMessage({
     role: "assistant",
     provider: "anthropic",
     model: "claude-test",
     content: [block],
-    timestamp: 1_000_000,
+    timestamp: Date.now() - 30_000,
   }, { toolResults: new Map([[block.toolCallId, partial]]) });
 
-  assert.match(html, /timeout 1m 30s/);
+  assert.match(html, />1m<\/span>/);
+  assert.doesNotMatch(html, />1m 30s</);
+  // The remaining time and the ending notice are both the card's warning red.
+  assert.match(html, /color:#f87171[^"]*">1m<\/span>/);
 });
 
-test("replaces the timeout with the elapsed duration once the shell call reports back", () => {
+test("stops a running shell call at zero and says the command is ending", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [{ type: "toolCall", toolCallId: "call-bash-0", toolName: "bash", input: { command: "sleep 60", timeout: 20 } }],
+    timestamp: Date.now() - 60_000,
+  });
+
+  assert.match(html, /terminating soon/);
+  assert.doesNotMatch(html, />-1s</);
+  assert.match(html, /color:#f87171[^"]*">terminating soon<\/span>/);
+});
+
+test("replaces the countdown with the elapsed duration once the shell call reports back", () => {
   const block = {
     type: "toolCall",
     toolCallId: "call-bash-2",
@@ -719,18 +738,33 @@ test("replaces the timeout with the elapsed duration once the shell call reports
 
   assert.match(html, /2m 5s/);
   assert.doesNotMatch(html, /timeout/);
+  assert.doesNotMatch(html, /terminating soon/);
 });
 
-test("shows a shell timeout on a call that never reported a result at all", () => {
+test("shows the timeout in full while the message that carries the call is still streaming", () => {
+  // The generation can continue after the tool call is complete, and the command
+  // only starts running at message_end — until then there is nothing to count down.
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [{ type: "toolCall", toolCallId: "call-bash-3", toolName: "bash", input: { command: "npm run dev", timeout: 90 } }],
+    timestamp: Date.now() - 30_000,
+  }, { isStreaming: true });
+
+  assert.match(html, /color:#f87171[^"]*">1m 30s<\/span>/);
+});
+
+test("counts down a shell call that never reported a result at all", () => {
   const html = renderMessage({
     role: "assistant",
     provider: "anthropic",
     model: "claude-test",
     content: [{ type: "toolCall", toolCallId: "call-ps-1", toolName: "powershell", input: { command: "Get-ChildItem", timeout: 30 } }],
-    timestamp: 1_000_000,
+    timestamp: Date.now() - 10_000,
   });
 
-  assert.match(html, /timeout 30s/);
+  assert.match(html, />20s<\/span>/);
 });
 
 test("leaves the timeout argument of a non-shell tool out of the header", () => {
@@ -739,9 +773,12 @@ test("leaves the timeout argument of a non-shell tool out of the header", () => 
     provider: "anthropic",
     model: "claude-test",
     content: [{ type: "toolCall", toolCallId: "call-read-1", toolName: "read", input: { path: "/tmp/a.ts", timeout: 30 } }],
-    timestamp: 1_000_000,
+    timestamp: Date.now() - 10_000,
   });
 
   assert.match(html, /a\.ts/);
+  // A countdown would read 20s here; nothing in the header may stand in for it.
+  assert.doesNotMatch(html, />20s<\/span>/);
+  assert.doesNotMatch(html, /terminating soon/);
   assert.doesNotMatch(html, /timeout/);
 });

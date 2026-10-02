@@ -395,7 +395,7 @@ export const enLocale: LocalePlugin = {
     "chat.runningToolsMore": "Running {names} (+{count})...",
     "chat.waitingModel": "Waiting for model...",
     "chat.runningCommand": "Running command...",
-    "chat.toolTimeout": "timeout {duration}",
+    "chat.toolTimeoutEnding": "terminating soon",
     "chat.thinking": "Thinking...",
     "chat.processDetails": "Process details",
     "chat.message": "message",

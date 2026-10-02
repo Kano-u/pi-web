@@ -13,6 +13,7 @@ import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
 import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName } from "@/lib/tool-names";
 import { formatDurationLabel } from "@/lib/duration-format";
+import { ShellTimeoutBadge } from "./ShellTimeoutBadge";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
 import { usePinnedCard } from "@/hooks/usePinnedCard";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
@@ -818,7 +819,7 @@ function AssistantMessageView({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blockItems.map(({ block, originalIndex }) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
+          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} toolStartedAt={isStreaming ? undefined : message.timestamp} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
         ))}
       </div>
 
@@ -940,7 +941,7 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
+function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, toolStartedAt, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; toolStartedAt?: number; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
   if (block.type === "text") {
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
@@ -951,7 +952,7 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenSession={onOpenSession} />;
+    return <ToolCallBlock block={tc} result={result} duration={duration} toolStartedAt={toolStartedAt} onOpenSession={onOpenSession} />;
   }
   return null;
 }
@@ -978,7 +979,7 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
   return details.kind === "pi-web-subagent" && typeof details.sessionId === "string";
 }
 
-function ToolCallBlock({ block, result, duration, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSession?: (sessionId: string) => void }) {
+function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; toolStartedAt?: number; onOpenSession?: (sessionId: string) => void }) {
   const { t } = useI18n();
   // The reader's state, which the chevron follows right away. `expanded` trails
   // it while the panes fold away, so the collapse animation still has content to
@@ -1006,14 +1007,11 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
   const mcpLabel = mcpToolLabel(block.toolName, result?.details);
 
   // A shell call that has not reported back yet: the duration slot below stays
-  // empty until it does, so it shows the timeout the command was given instead.
-  // Pi streams a running shell tool's output as a partial result with no
-  // timestamp, and the duration is derived from that timestamp, so a result
+  // empty until it does, so it counts down the timeout the command was given
+  // instead. Pi streams a running shell tool's output as a partial result with
+  // no timestamp, and the duration is derived from that timestamp, so a result
   // without one is exactly a call that is still running.
   const shellTimeout = isShellToolName(block.toolName) ? getShellTimeout(block.input) : null;
-  const shellTimeoutLabel = shellTimeout !== null && !result?.timestamp
-    ? t("chat.toolTimeout", { duration: formatDurationLabel(shellTimeout) })
-    : null;
 
   // Result display
   const resultContent = result ? (codemode ? stripCodemodeHeader(result.content) : result.content) : [];
@@ -1090,8 +1088,8 @@ function ToolCallBlock({ block, result, duration, onOpenSession }: { block: Tool
             {duration !== undefined && (
               <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
             )}
-            {shellTimeoutLabel !== null && (
-              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{shellTimeoutLabel}</span>
+            {shellTimeout !== null && !result?.timestamp && (
+              <ShellTimeoutBadge timeout={shellTimeout} startedAt={toolStartedAt} />
             )}
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
               <polyline points="2 3.5 5 6.5 8 3.5" />
