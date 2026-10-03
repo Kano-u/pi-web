@@ -277,6 +277,8 @@ export const zhCNLocale: LocalePlugin = {
     "files.restorePanelWidth": "还原文件面板宽度",
     "files.showPanel": "显示文件面板",
     "files.noneOpen": "没有打开的文件",
+    "projects.active": "活跃项目",
+    "projects.switchTo": "切换到 {path}",
     "layout.resizeSidebar": "调整侧边栏宽度",
     "layout.resizeFilePanel": "调整文件面板宽度",
     "layout.resizeSidebarSections": "调整会话列表与文件浏览器高度",

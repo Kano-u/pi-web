@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { SessionSidebar } from "./SessionSidebar";
+import { SessionSidebar, showProjectActivity } from "./SessionSidebar";
 import { ChatWindow } from "./ChatWindow";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { FileViewer } from "./FileViewer";
@@ -37,6 +37,7 @@ import { getInitialNavigation, withTabOpen } from "@/lib/initial-navigation";
 import { clearTabOpenSession, getTabOpen, setTabOpenNewSession, setTabOpenSession } from "@/lib/tab-session";
 import { mergeCatalogRow } from "./session-catalog-helpers";
 import { rekeyDraft } from "@/lib/draft-store";
+import { getProjectTabs, getProjectActivity } from "@/lib/project-groups";
 import {
   clearLastOpen,
   getLastOpenSession,
@@ -71,6 +72,9 @@ type AutoNameStatus =
   | { kind: "error"; message: string };
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
+// The file-panel toggle is narrowed so the active-project tabs beside it get
+// the width instead; its icon stays 16px.
+const FILE_PANEL_TOGGLE_SIZE = 28;
 const AGENT_PANEL_WIDTH = 420;
 
 function parkedNewSessionDraftKey(cwd: string): string {
@@ -146,12 +150,37 @@ export function AppShell() {
   );
   const hasSubagentSessions = Boolean(activeSessionFamily?.subagents.length);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  // Unread completion markers, owned by the sidebar's session poll and mirrored
+  // here so the top bar can mark projects as active without opening it.
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => new Set());
+  const handleUnreadSessionIdsChange = useCallback((ids: Set<string>) => {
+    setUnreadSessionIds((previous) => {
+      if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return previous;
+      return ids;
+    });
+  }, []);
+
   const handleRunningSessionIdsChange = useCallback((ids: Set<string>) => {
     setRunningSessionIds((previous) => {
       if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return previous;
       return ids;
     });
   }, []);
+
+  // Top-bar project tabs: running projects first, then unread completions, then
+  // the most recent ones, always at least MIN_PROJECT_TABS — one entry each, so
+  // parallel conversations in other projects stay one click away.
+  const projectTabs = useMemo(
+    () => getProjectTabs(sessionsWithSelection, runningSessionIds, unreadSessionIds),
+    [sessionsWithSelection, runningSessionIds, unreadSessionIds],
+  );
+
+  // The same per-project counts the sidebar's dropdown badges read, so a top-bar
+  // tab carries the running ring the project panel already shows.
+  const projectActivity = useMemo(
+    () => getProjectActivity(sessionsWithSelection, runningSessionIds, unreadSessionIds),
+    [sessionsWithSelection, runningSessionIds, unreadSessionIds],
+  );
   // The temporary id distinguishes consecutive fresh composers in one cwd.
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionDraftId, setNewSessionDraftId] = useState("initial");
@@ -528,6 +557,18 @@ export function AppShell() {
 
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  // Which project the top-bar tab strip highlights: the selected session's
+  // project, or — for a fresh composer — the project that owns the effective
+  // cwd. Mirrors the session lookup behind SessionSidebar's projectFor().
+  const currentProjectKey = useMemo(() => {
+    if (selectedSession) return workspaceKeyOf(selectedSession);
+    const cwd = newSessionCwd ?? activeCwd;
+    if (!cwd) return null;
+    const match = sessionsWithSelection.find(
+      (session) => session.cwd === cwd || (session.projectRoot ?? session.cwd) === cwd,
+    );
+    return match ? workspaceKeyOf(match) : cwd;
+  }, [selectedSession, newSessionCwd, activeCwd, sessionsWithSelection]);
   const activeProjectKeyRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
@@ -1224,6 +1265,7 @@ export function AppShell() {
         onAtMentions={handleAtMentions}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
+        onUnreadSessionIdsChange={handleUnreadSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
@@ -1787,6 +1829,81 @@ export function AppShell() {
     );
   };
 
+  // Top-bar project tabs: running projects first, then unread completions, then
+  // the most recent projects, never fewer than MIN_PROJECT_TABS. Clicking one
+  // switches workspaces exactly like picking the project in the sidebar — the
+  // same handleCwdChange, so the workspace's last open session is restored.
+  // Mobile shows a single initial per project so the strip stays narrow next to
+  // the file-panel toggle.
+  const renderProjectTabs = (mobile: boolean) => {
+    if (projectTabs.length === 0) return null;
+    const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;
+    return (
+      <div
+        role="group"
+        aria-label={translate("projects.active")}
+        data-top-bar-project-tabs="true"
+        style={{
+          marginLeft: !mobile && !sessionStats && !contextUsage ? "auto" : 0,
+          display: "flex",
+          alignItems: "stretch",
+          height: "100%",
+          minWidth: 0,
+          flexShrink: 1,
+          overflowX: "auto",
+          overflowY: "hidden",
+          visibility: covered ? "hidden" : "visible",
+          pointerEvents: covered ? "none" : "auto",
+        }}
+      >
+        {projectTabs.map((project) => {
+          const isCurrent = project.key === currentProjectKey;
+          const name = getFileName(project.root) || project.root;
+          const label = mobile ? Array.from(name)[0]?.toUpperCase() ?? "?" : name;
+          return (
+            <button
+              key={project.key}
+              type="button"
+              onClick={() => { if (!isCurrent) handleCwdChange(project.root, project.root, project.key); }}
+              tabIndex={covered ? -1 : undefined}
+              data-project-tab={project.key}
+              data-project-tab-current={isCurrent ? "true" : undefined}
+              aria-current={isCurrent ? "true" : undefined}
+              title={isCurrent ? project.root : translate("projects.switchTo", { path: project.root })}
+              aria-label={translate("projects.switchTo", { path: project.root })}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: mobile ? 3 : 6,
+                height: "100%",
+                width: mobile ? 32 : undefined,
+                maxWidth: mobile ? 32 : 140,
+                padding: mobile ? 0 : "0 10px",
+                flexShrink: 0,
+                background: isCurrent ? "var(--bg-selected)" : "none",
+                border: "none",
+                borderLeft: "1px solid var(--border)",
+                color: isCurrent ? "var(--text)" : "var(--text-muted)",
+                cursor: isCurrent ? "default" : "pointer",
+                font: "inherit",
+                fontSize: mobile ? 12 : 11,
+                fontWeight: isCurrent ? 600 : 400,
+                whiteSpace: "nowrap",
+                transition: "color 0.12s, background 0.12s",
+              }}
+              onMouseEnter={(event) => { if (!isCurrent && !covered) event.currentTarget.style.color = "var(--text)"; }}
+              onMouseLeave={(event) => { event.currentTarget.style.color = isCurrent ? "var(--text)" : "var(--text-muted)"; }}
+            >
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{label}</span>
+              {showProjectActivity(projectActivity.get(project.key), translate, mobile)}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderMainFileToggle = (mobile: boolean) => {
     const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;
     return (
@@ -1802,9 +1919,9 @@ export function AppShell() {
         aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
         data-mobile-toolbar-file={mobile ? "true" : undefined}
         style={{
-          marginLeft: !mobile && !sessionStats && !contextUsage ? "auto" : 0,
+          marginLeft: !mobile && !sessionStats && !contextUsage && projectTabs.length === 0 ? "auto" : 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+          width: FILE_PANEL_TOGGLE_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
           visibility: covered ? "hidden" : "visible",
           pointerEvents: covered ? "none" : "auto",
           background: rightPanelOpen ? "var(--bg-selected)" : "none",
@@ -2037,6 +2154,7 @@ export function AppShell() {
               )}
               {!isNarrowMobile && renderChatToolbarActions(true)}
               {renderSessionStatsButton(true)}
+              {renderProjectTabs(true)}
               {renderMainFileToggle(true)}
               {isNarrowMobile && mobileToolbarMoreOpen && (
                 <div
@@ -2070,6 +2188,7 @@ export function AppShell() {
               {renderSessionStatsButton(false)}
             </>
           )}
+          {!isMobile && renderProjectTabs(false)}
           {!isMobile && renderMainFileToggle(false)}
           {isMobile && sessionHasBranches && (
             <BranchNavigator

@@ -144,6 +144,9 @@ interface Props {
    *  Lets the app play a cross-workspace completion tone. */
   onBackgroundTaskDone?: () => void;
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
+  /** Unread completion markers, so the top bar can show a project as active
+   *  without opening the sidebar. */
+  onUnreadSessionIdsChange?: (ids: Set<string>) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
 }
 
@@ -396,7 +399,7 @@ function PiWebTitle() {
   );
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, onOpenTerminal, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onBackgroundTaskDone, onRunningSessionIdsChange, onUnreadSessionIdsChange, onSessionsChange }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   // Tracked in a ref only: the version is compared against the polled value to
@@ -733,6 +736,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => {
     onRunningSessionIdsChange?.(runningSessionIds);
   }, [onRunningSessionIdsChange, runningSessionIds]);
+
+  useEffect(() => {
+    onUnreadSessionIdsChange?.(unreadSessionIds);
+  }, [onUnreadSessionIdsChange, unreadSessionIds]);
 
   useEffect(() => {
     onSessionsChange?.(allSessions);
@@ -2237,20 +2244,24 @@ function UnreadSessionIndicator() {
  * Compact per-project activity badges for the workspace selector dropdown items:
  * a spinning running icon + count and an unread dot + count. Renders nothing
  * when the project has no activity. Counts share the accent / unread colors of
- * the per-session indicators so the two stay visually consistent.
+ * the per-session indicators so the two stay visually consistent; `compact`
+ * drops both counts for the top bar's narrow project tabs, which only show the
+ * running ring.
  */
-function showProjectActivity(
+export function showProjectActivity(
   activity: { running: number; unread: number } | undefined,
   t: (key: string) => string,
+  compact = false,
 ): ReactNode {
   if (!activity || (activity.running === 0 && activity.unread === 0)) return null;
+  if (compact && activity.running === 0) return null;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, marginLeft: 6 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: compact ? 0 : 5, flexShrink: 0, marginLeft: compact ? 4 : 6 }}>
       {activity.running > 0 && (
         <span
           title={t("sidebar.agentRunning")}
           aria-label={`${t("sidebar.agentRunning")} (${activity.running})`}
-          style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)", fontSize: 10, fontFamily: "var(--font-mono)" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: compact ? 0 : 3, color: "var(--accent)", fontSize: 10, fontFamily: "var(--font-mono)" }}
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
             <g>
@@ -2258,10 +2269,10 @@ function showProjectActivity(
               <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite" />
             </g>
           </svg>
-          {activity.running}
+          {compact ? null : activity.running}
         </span>
       )}
-      {activity.unread > 0 && (
+      {!compact && activity.unread > 0 && (
         <span
           title={t("sidebar.newSessionActivity")}
           aria-label={`${t("sidebar.newSessionActivity")} (${activity.unread})`}
