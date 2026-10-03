@@ -8,7 +8,7 @@ Files: `lib/fold-panes.ts`, `hooks/usePinnedCard.ts`, `components/PinnedCard.tsx
 `components/ThinkingCard.tsx`, `lib/thinking-content.ts`, `lib/duration-format.ts`,
 `components/ShellTimeoutBadge.tsx`, `lib/default-project.ts`,
 `components/NewProjectDialog.tsx`, `lib/file-mutations.ts`, `lib/file-archives.ts`,
-`components/DirectoryPicker.tsx`.
+`components/DirectoryPicker.tsx`, `lib/ntfy.ts`, `lib/ntfy-templates.ts`, `app/api/ntfy/route.ts`.
 
 ## Pinned card headers and the accordion fold (`lib/fold-panes.ts`)
 
@@ -31,6 +31,12 @@ The badge is fork-only and lives in its own file so `MessageView.tsx` gains no s
 "Use default directory" is upstream #996 and stays byte-identical to it: `lib/default-cwd.ts` (`localDateStamp`, `defaultCwdPath`, `~/pi-cwd/<YYYYMMDD>`), a POST-only `/api/default-cwd`, and no default-cwd entry in the file allow-list. Do not add a configurable default cwd back: upstream **closed** #892 on 2026-09-29 in favour of #996's design, where a dated folder keeps a first-time user out of their own data and needs no stable path because any folder with a session reopens from the picker.
 
 Our own "New project" action is a separate layer instead: `lib/default-project.ts` reads `defaultProjectPath` from `~/.pi/agent/pi-web.json` (empty = the built-in `~/pi-cwd`, upstream's dated-folder parent), `GET`/`PUT /api/default-project` own that setting, and `POST /api/default-project { name }` creates or reuses `<project directory>/<name>`. The sidebar's New project dialog submits the name and then selects the returned path through `commitCustomPath`, so `/api/cwd/validate` still owns validation, project identity and the allow-list. Keeping this route apart from `/api/default-cwd` is deliberate — it is what makes syncing upstream's default-cwd code conflict-free.
+
+## ntfy notifications (`lib/ntfy.ts`)
+
+The two upstream completion notifications are browser-bound: `lib/web-push.ts` needs a registered push subscription and `lib/browser-notifications.ts` needs the Notification permission and a hidden window, which is a high bar on a phone. `lib/ntfy.ts` adds a server-side runner instead: the user writes one `curl` command with `{{…}}` placeholders, and when a top-level session finishes Pi Web substitutes them and runs the command, so a phone subscribed to the resulting ntfy topic gets the message — no browser permission, no open window, no service worker.
+
+Run, not interpret: `splitShellWords()` (upstream's `lib/shell-words.ts`, which already refuses pipes, `&&`, redirects and `$(…)`) turns the command into an argv list, the `{{…}}` substitution happens **after** the split so a title with spaces or quotes stays one argv word, and the first word must be `curl`. The process then runs with no shell and a timeout; a failure is logged as an exit code only, so a token in the command never reaches a log. The setting is deliberately just two fields — `enabled` and `command` — in the fork's own `~/.pi/agent/pi-web.json` under `ntfy`, written with the same read-modify-write as `defaultProjectPath`. `GET`/`PUT /api/ntfy` read and write it and `POST /api/ntfy` runs the stored command once with test values. Settings › General renders a command box, a row of tappable `{{…}}` chips, and a collapsible help that lists the placeholders and ready-made commands; on a wide panel the help sits beside the command, on a phone it stacks below (and the settings modal follows `--app-viewport-height`, so the keyboard does not cover the buttons). `lib/ntfy-templates.ts` (kept client-safe so the browser bundle never pulls in `node:child_process`) exports `NTFY_VARIABLES` and `NTFY_COMMAND_EXAMPLES`, which the chips, the help and the unit test all read, so the help cannot drift from the code. `{{url}}` comes from the optional `PI_WEB_PUBLIC_URL` environment variable. The trigger is one call next to upstream's push call in `lib/rpc-manager.ts`'s `onAgentRunComplete` — an upstream file, so the diff stays at one import and one call.
 
 ## Directory picker sorting and custom path
 

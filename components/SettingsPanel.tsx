@@ -16,7 +16,7 @@ import {
 } from "@/hooks/useChatAppearance";
 import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { sendAgentCommand } from "@/lib/agent-client";
-import type { DefaultProjectSettingsResponse, ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
+import type { DefaultProjectSettingsResponse, NtfySettingsResponse, ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
 import { DirectoryPicker } from "./DirectoryPicker";
 import {
   setLastSettingsSection,
@@ -30,6 +30,7 @@ import {
 } from "@/lib/thinking-expansion-preference";
 import { ModelsConfig } from "./ModelsConfig";
 import { setupPushSubscription } from "@/lib/push-client";
+import { NTFY_COMMAND_EXAMPLES, NTFY_VARIABLES } from "@/lib/ntfy-templates";
 import { SkillsConfig } from "./SkillsConfig";
 import { AgentsConfig } from "./AgentsConfig";
 import { PluginsConfig } from "./PluginsConfig";
@@ -225,9 +226,26 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [pushRegistering, setPushRegistering] = useState(false);
   const [pushStatus, setPushStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
+  const [ntfySettings, setNtfySettings] = useState<NtfySettingsResponse>({ enabled: false, command: "" });
+  const [ntfySaving, setNtfySaving] = useState(false);
+  const [ntfyTesting, setNtfyTesting] = useState(false);
+  const [ntfyStatus, setNtfyStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
+  const [ntfyHelpOpen, setNtfyHelpOpen] = useState(false);
+  const ntfyCommandRef = useRef<HTMLTextAreaElement | null>(null);
   const [webAuthEnabled, setWebAuthEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/ntfy")
+      .then(async (response) => {
+        const data = await response.json() as NtfySettingsResponse & { error?: string };
+        if (response.ok && !data.error && !cancelled) setNtfySettings(data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -308,6 +326,70 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     } finally {
       setPushRegistering(false);
     }
+  };
+
+  const saveNtfy = async () => {
+    if (ntfySaving) return;
+    setNtfySaving(true);
+    setNtfyStatus(null);
+    try {
+      const response = await fetch("/api/ntfy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ntfySettings),
+      });
+      const data = await response.json() as NtfySettingsResponse & { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      setNtfySettings(data);
+      setNtfyStatus({ kind: "ok", message: t("settings.ntfySaved") });
+    } catch (cause) {
+      setNtfyStatus({ kind: "error", message: `${t("settings.ntfySaveFailed")} ${cause instanceof Error ? cause.message : String(cause)}` });
+    } finally {
+      setNtfySaving(false);
+    }
+  };
+
+  const testNtfy = async () => {
+    if (ntfyTesting) return;
+    setNtfyTesting(true);
+    setNtfyStatus(null);
+    try {
+      const response = await fetch("/api/ntfy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: ntfySettings.command }),
+      });
+      const data = await response.json() as { ok?: boolean; error?: string };
+      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      setNtfyStatus({ kind: "ok", message: t("settings.ntfyTestSent") });
+    } catch (cause) {
+      setNtfyStatus({ kind: "error", message: `${t("settings.ntfyTestFailed")} ${cause instanceof Error ? cause.message : String(cause)}` });
+    } finally {
+      setNtfyTesting(false);
+    }
+  };
+
+  const insertNtfyToken = (token: string) => {
+    setNtfyStatus(null);
+    const textarea = ntfyCommandRef.current;
+    if (!textarea) {
+      setNtfySettings((current) => ({ ...current, command: current.command + token }));
+      return;
+    }
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const command = textarea.value.slice(0, start) + token + textarea.value.slice(end);
+    setNtfySettings((current) => ({ ...current, command }));
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const caret = start + token.length;
+      textarea.setSelectionRange(caret, caret);
+    });
+  };
+
+  const fillNtfyCommand = (command: string) => {
+    setNtfySettings((current) => ({ ...current, command }));
+    setNtfyStatus(null);
   };
 
   return (
@@ -490,6 +572,136 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
             {pushStatus.message}
           </p>
         )}
+      </section>
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("settings.ntfy")}</h3>
+        <p className="settings-general-description">{t("settings.ntfyDescription")}</p>
+        <div className={`settings-ntfy${ntfyHelpOpen ? " is-help-open" : ""}`}>
+          <div className="settings-ntfy-editor">
+            <div className="settings-shell-option">
+              <span>{t("settings.ntfyEnabled")}</span>
+              <ConfigSwitch
+                checked={ntfySettings.enabled}
+                label={t("settings.ntfyEnabled")}
+                onChange={(enabled) => {
+                  setNtfySettings((current) => ({ ...current, enabled }));
+                  setNtfyStatus(null);
+                }}
+              />
+            </div>
+            <label className="settings-ntfy-field">
+              <span>{t("settings.ntfyCommand")}</span>
+              <textarea
+                ref={ntfyCommandRef}
+                className="settings-ntfy-command"
+                value={ntfySettings.command}
+                placeholder={t("settings.ntfyCommandPlaceholder")}
+                rows={6}
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                disabled={ntfySaving}
+                onChange={(event) => {
+                  setNtfySettings((current) => ({ ...current, command: event.target.value }));
+                  setNtfyStatus(null);
+                }}
+              />
+            </label>
+            <div className="settings-ntfy-chips" role="group" aria-label={t("settings.ntfyInsertVariable")}>
+              {NTFY_VARIABLES.map((variable) => (
+                <button
+                  key={variable.name}
+                  type="button"
+                  className="settings-ntfy-chip"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => insertNtfyToken(`{{${variable.name}}}`)}
+                >
+                  {`{{${variable.name}}}`}
+                </button>
+              ))}
+            </div>
+            <div className="settings-ntfy-actions">
+              <ConfigButton variant="primary" size="small" disabled={ntfySaving} onClick={() => void saveNtfy()}>
+                {ntfySaving ? t("i18n.saving") : t("i18n.save")}
+              </ConfigButton>
+              <ConfigButton
+                variant="secondary"
+                size="small"
+                disabled={ntfyTesting || !ntfySettings.command.trim()}
+                onClick={() => void testNtfy()}
+              >
+                {ntfyTesting ? t("settings.ntfyTesting") : t("settings.ntfyTest")}
+              </ConfigButton>
+              <button
+                type="button"
+                className="settings-ntfy-help-toggle"
+                aria-expanded={ntfyHelpOpen}
+                onClick={() => setNtfyHelpOpen((open) => !open)}
+              >
+                {ntfyHelpOpen ? t("settings.ntfyHelpHide") : t("settings.ntfyHelpShow")}
+              </button>
+            </div>
+            {ntfyStatus && (
+              <p
+                role="status"
+                className={ntfyStatus.kind === "ok" ? "settings-general-status" : "settings-general-error"}
+              >
+                {ntfyStatus.message}
+              </p>
+            )}
+          </div>
+          {ntfyHelpOpen && (
+            <div className="settings-ntfy-help">
+              <p className="settings-ntfy-help-intro">{t("settings.ntfyHelpIntro")}</p>
+              <h4 className="settings-ntfy-help-heading">{t("settings.ntfyHelpVariables")}</h4>
+              <ul className="settings-ntfy-help-vars">
+                {NTFY_VARIABLES.map((variable) => (
+                  <li key={variable.name}>
+                    <button
+                      type="button"
+                      className="settings-ntfy-chip"
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => insertNtfyToken(`{{${variable.name}}}`)}
+                    >
+                      {`{{${variable.name}}}`}
+                    </button>
+                    <span className="settings-ntfy-var-desc">{t(`settings.ntfyVar.${variable.name}`)}</span>
+                    <code className="settings-ntfy-var-example">{variable.example}</code>
+                  </li>
+                ))}
+              </ul>
+              <h4 className="settings-ntfy-help-heading">{t("settings.ntfyHelpExamples")}</h4>
+              {NTFY_COMMAND_EXAMPLES.map((example) => (
+                <div key={example.labelKey} className="settings-ntfy-example">
+                  <div className="settings-ntfy-example-header">
+                    <span>{t(example.labelKey)}</span>
+                    <ConfigButton
+                      variant="secondary"
+                      size="small"
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => fillNtfyCommand(example.command)}
+                    >
+                      {t("settings.ntfyFill")}
+                    </ConfigButton>
+                  </div>
+                  <pre className="settings-ntfy-example-command">{example.command}</pre>
+                </div>
+              ))}
+              <h4 className="settings-ntfy-help-heading">{t("settings.ntfyHelpNotes")}</h4>
+              <ul className="settings-ntfy-help-notes">
+                <li>{t("settings.ntfyHelpNoteCurl")}</li>
+                <li>{t("settings.ntfyHelpNoteShell")}</li>
+                <li>{t("settings.ntfyHelpNoteVariables")}</li>
+                <li>{t("settings.ntfyHelpNoteTopic")}</li>
+                <li>{t("settings.ntfyHelpNoteToken")}</li>
+                <li>{t("settings.ntfyHelpNoteUrl")}</li>
+              </ul>
+              <p className="settings-ntfy-help-security">{t("settings.ntfyHelpSecurity")}</p>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="settings-general-section">

@@ -39,7 +39,7 @@
 
 .config-panel-root.is-modal > .config-panel-surface {
   width: min(var(--config-panel-width), calc(100vw - 16px));
-  height: min(var(--config-panel-height), calc(100dvh - 16px));
+  height: min(var(--config-panel-height), calc(var(--app-viewport-height, 100dvh) - 16px));
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
@@ -1834,6 +1834,200 @@
   overflow-wrap: anywhere;
 }
 
+.settings-ntfy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.settings-ntfy .settings-shell-option {
+  max-width: none;
+}
+
+.settings-ntfy-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-ntfy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-ntfy-field > span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.settings-ntfy-command {
+  width: 100%;
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settings-ntfy-command:focus {
+  border-color: var(--accent);
+}
+
+.settings-ntfy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-ntfy-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.settings-ntfy-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.settings-ntfy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-ntfy-help-toggle {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.settings-ntfy-help {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-ntfy-help-intro,
+.settings-ntfy-help-security {
+  margin: 0;
+}
+
+.settings-ntfy-help-security {
+  color: var(--text-dim);
+}
+
+.settings-ntfy-help-heading {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-ntfy-help-vars,
+.settings-ntfy-help-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-ntfy-help-vars li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.settings-ntfy-var-desc {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-ntfy-var-example {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.settings-ntfy-help-notes li::before {
+  content: "• ";
+  color: var(--text-dim);
+}
+
+.settings-ntfy-example {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-ntfy-example-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-ntfy-example-command {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Wide settings panels show the command and its help side by side. */
+@media (min-width: 760px) {
+  .settings-ntfy.is-help-open {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .settings-ntfy.is-help-open .settings-ntfy-help {
+    max-height: 460px;
+    overflow: auto;
+  }
+}
+
 @media (max-width: 640px) {
   .config-add-source-example.has-label {
     grid-template-columns: minmax(0, 1fr);
@@ -1841,7 +2035,7 @@
 
   .config-panel-root.is-modal > .config-panel-surface {
     width: calc(100vw - 16px);
-    height: calc(100dvh - 16px);
+    height: calc(var(--app-viewport-height, 100dvh) - 16px);
   }
 
   .config-split-view {

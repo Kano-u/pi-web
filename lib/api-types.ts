@@ -814,6 +814,19 @@ export interface PushConfigResponse {
   publicKey: string;
 }
 
+/** GET/PUT /api/ntfy — the stored ntfy block of `~/.pi/agent/pi-web.json`. */
+export interface NtfySettingsResponse {
+  enabled: boolean;
+  /** A `curl …` command whose `{{…}}` placeholders are substituted before it runs. */
+  command: string;
+}
+
+/** POST /api/ntfy — the exit status of one test run of the stored command. */
+export interface NtfyTestResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export type PluginScope = "global" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 
