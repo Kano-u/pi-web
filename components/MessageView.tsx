@@ -21,7 +21,7 @@ import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
-import { CodemodeCallList, CodemodeScript } from "./CodemodeToolView";
+import { CodemodeCallList } from "./CodemodeToolView";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
 import type {
   AgentMessage,
@@ -1030,7 +1030,7 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
   // Result images are not one of them: they are shown whether or not the details
   // are open, so a fold has to leave them where they are.
   const showsCodemode = expanded && Boolean(codemode);
-  const showsArgs = expanded && !codemode && !patchFiles && (isStreamingInput || !isEditTool);
+  const showsArgs = expanded && !patchFiles && (isStreamingInput || !isEditTool);
   const showsPatch = expanded && Boolean(patchFiles);
   const showsResult = expanded && Boolean(result) && !patchFiles && !codemodeRunning
     && (Boolean(resultDiff) || !resultIsEmpty || resultImages.length === 0);
@@ -1109,15 +1109,7 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
         </>
       }
     >
-      {/* ── Expanded: codemode script and the calls it made ── */}
-      {showsCodemode && codemode && (
-      <div data-pin-pane="">
-        <CodemodeScript code={codemode.code} isError={isError} />
-        <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} isError={isError} />
-      </div>
-      )}
-
-      {/* ── Expanded: input args (only when no richer view exists) ── */}
+      {/* ── Expanded: input args (only when no richer view exists); a codemode script in place of its JSON ── */}
       {showsArgs && (
       <div data-pin-pane="">
         <pre
@@ -1134,8 +1126,15 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
             wordBreak: "break-all",
           }}
         >
-          {inputStr}
+          {codemode ? codemode.code.replace(/\r/g, "").trimEnd() : inputStr}
         </pre>
+      </div>
+      )}
+
+      {/* ── Expanded: the calls a codemode script made ── */}
+      {showsCodemode && codemode && (
+      <div data-pin-pane="">
+        <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} isError={isError} />
       </div>
       )}
 

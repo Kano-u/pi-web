@@ -1,0 +1,41 @@
+# Fork-only notes
+
+Things that exist only in this fork. Upstream never edits this file, so a sync
+cannot conflict with it. `AGENTS.md` keeps the short list of fork-only files;
+this file holds the reasoning behind them.
+
+Files: `lib/fold-panes.ts`, `hooks/usePinnedCard.ts`, `components/PinnedCard.tsx`,
+`components/ThinkingCard.tsx`, `lib/thinking-content.ts`, `lib/duration-format.ts`,
+`components/ShellTimeoutBadge.tsx`, `lib/default-project.ts`,
+`components/NewProjectDialog.tsx`, `lib/file-mutations.ts`, `lib/file-archives.ts`,
+`components/DirectoryPicker.tsx`.
+
+## Pinned card headers and the accordion fold (`lib/fold-panes.ts`)
+
+An expanded card pins its header 8px below the top of the message list, so a tall diff, output or reasoning chain can be folded away without scrolling back up to a header that has left the viewport. The structure carries the feature, following kilo/opencode's accordion (`.pin-card` in `app/globals.css`): the card's own box clips nothing and paints nothing, so the header's sticky containing block stays the message list; the header draws the top edge and the top radii and `.pin-card-body` the bottom ones (the outer radius is the card's 7px, so the fill's corner is 6px); both paint the card tint composited over `var(--bg)`, which keeps a pinned bar opaque; and `.pin-card::before` is the band over the pinned header — page background in a block that takes no net height, hides behind the header at rest, and covers the 8px gap plus the 6px the rounded corners leave uncovered once it pins. Nothing detects whether the header is stuck: there is no scroll listener and no re-render. The list's top inset lives on ChatWindow's wrapper rather than on the scroll container, so a sticky offset is measured from the visible top edge.
+
+`foldPanes()` runs the panes' heights and the list's `scrollTop` from one rAF loop — a pinned header only *looks* pinned, so the list comes back by exactly what the panes give up. The duration scales with the fold's distance (the panes' height or the list's scroll-back, whichever is larger), 200–400ms, so a tall card does not rush while a short fold stays at 200ms. Result images stay outside the `[data-pin-pane]` wrappers and therefore stay visible; reduced motion applies the compensation without the animation; a wheel or tap mid-fold stops the scroll writes and leaves the reader where they put themselves; and interrupting a fold gives the panes their own height back. `e2e/tool-card-sticky.mjs` covers the pinned offset, the paint and hit-testing of the room above the header, the fold, reduced motion, and the interruption.
+
+The mechanism is shared rather than tool-specific. Both `ToolCallBlock` and `ThinkingCard` render `components/PinnedCard.tsx` and drive it with `hooks/usePinnedCard.ts` (the open/expanded/fold state machine); `.tool-card` and `.thinking-card` only set the tint over the shared `.pin-card*` structure, and panes use `[data-pin-pane]`. `ThinkingCard` lives in its own file, while `ThinkingBlock` in the upstream-synced `components/MessageView.tsx` is only a one-line delegate so that file's diff stays small; `lib/thinking-content.ts` holds the deferred-body fetch, and a thinking body is capped at 560px so it scrolls inside the card like a tool result. `e2e/thinking-card-sticky.mjs` covers the pinned offset, the cap and the fold.
+
+`ToolCallBlock` is the one place in `MessageView.tsx` whose diff cannot stay small: upstream keeps rewriting its header, body and result rendering, so a sync has to fold their new pieces into the `PinnedCard` shell. Every foldable body goes in a `[data-pin-pane]` wrapper, `showsArgs` / `showsCodemode` / `showsPatch` / `showsResult` decide what mounts, and `hasBody` has to name each of them or the card renders nothing below its header. Result images stay unwrapped, exactly as upstream renders them.
+
+## Shell call timeout badge
+
+`lib/duration-format.ts` labels a whole number of seconds as `57s` / `1m 30s` / `2m` / `1h 5m`, plus `remainingTimeoutSeconds` clamped to `[0, timeout]`; `lib/tool-names.ts` adds `isShellToolName` and `getShellTimeout`. `components/ShellTimeoutBadge.tsx` counts the time a running `bash` / `powershell` call has left before its `timeout`, in the slot that later holds the elapsed duration, and `ToolCallBlock` in the upstream-synced `components/MessageView.tsx` only passes it that call's start time (the assistant message's `timestamp`, via `BlockView`) and keeps the elapsed-duration rendering.
+
+The badge is fork-only and lives in its own file so `MessageView.tsx` gains no state, effect or interval — the countdown's 1s tick is there, stopped once it reaches 0. Pi streams a running shell tool's output as a partial result that carries no timestamp, and the elapsed duration is derived from that timestamp, so `!result?.timestamp` is what marks the call unfinished (upstream renders that duration as a plain `{duration}s`). The countdown starts from the message timestamp rather than the tool's real start, so it can reach 0 a few seconds before pi kills the command, which is why the zero state is the `chat.toolTimeoutEnding` key (`terminating soon` / `即将终止` / `即將終止`) in all three locales instead of a `0s`; the running value itself carries no words — `chat.toolTimeout` is gone. Badge text is the card's warning red (`#f87171`, the same colour an erroring tool name gets) in every state: the countdown, the full limit shown while the message still streams, and the zero state. `components/ThinkingCard.tsx` labels its own duration with the same formatter.
+
+## Default directory and the New project layer
+
+"Use default directory" is upstream #996 and stays byte-identical to it: `lib/default-cwd.ts` (`localDateStamp`, `defaultCwdPath`, `~/pi-cwd/<YYYYMMDD>`), a POST-only `/api/default-cwd`, and no default-cwd entry in the file allow-list. Do not add a configurable default cwd back: upstream **closed** #892 on 2026-09-29 in favour of #996's design, where a dated folder keeps a first-time user out of their own data and needs no stable path because any folder with a session reopens from the picker.
+
+Our own "New project" action is a separate layer instead: `lib/default-project.ts` reads `defaultProjectPath` from `~/.pi/agent/pi-web.json` (empty = the built-in `~/pi-cwd`, upstream's dated-folder parent), `GET`/`PUT /api/default-project` own that setting, and `POST /api/default-project { name }` creates or reuses `<project directory>/<name>`. The sidebar's New project dialog submits the name and then selects the returned path through `commitCustomPath`, so `/api/cwd/validate` still owns validation, project identity and the allow-list. Keeping this route apart from `/api/default-cwd` is deliberate — it is what makes syncing upstream's default-cwd code conflict-free.
+
+## Directory picker sorting and custom path
+
+`mtimeMs` on `BrowsableDirectoryEntry` in `lib/directory-browser.ts` feeds the sort buttons in `components/DirectoryPicker.tsx`, and `components/SessionSidebar.tsx` adds the custom-path entry point. Both are additive: the picker keeps upstream's listing and selection behaviour, and the sort choice never leaves the dialog.
+
+## Explorer file management (#899)
+
+Create, rename, delete, touch, mkdir, download, in-place edit, extract and compress. `lib/file-mutations.ts` (name validation, real-parent resolution, the allow-root-checked create/rename/delete/write paths), `lib/file-archives.ts` + `lib/archive-names.ts` (bsdtar extract and zip), the mutation branch of `POST /api/files/[...path]`, and the context menu, inline rename and inline create rows of `components/FileExplorer.tsx`, the editor in `components/FileViewer.tsx`, and the `onFileMutated` refresh wiring in `components/AppShell.tsx`. Upstream closed the PR as out of a thin frontend's scope, so `PRS.md` keeps its row.
