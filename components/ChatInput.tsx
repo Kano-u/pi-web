@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
-import type { SkillsResponse } from "@/lib/api-types";
+import type { SkillsResponse, SlashCommandFavoritesResponse } from "@/lib/api-types";
 import type { TextContent, UserMessage } from "@/lib/types";
 import {
   clearDraft,
@@ -616,6 +616,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState<number | null>(null);
+  const [favoriteCommands, setFavoriteCommands] = useState<string[]>([]);
+  const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
   const [atMenuOpen, setAtMenuOpen] = useState(false);
   const [atMenuMaxHeight, setAtMenuMaxHeight] = useState<number | null>(null);
@@ -647,6 +649,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const slashCommandsRequestedRef = useRef(false);
   const slashMenuRef = useRef<HTMLDivElement>(null);
   const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const favoritesMenuRef = useRef<HTMLDivElement>(null);
+  const favoriteCommandsRef = useRef<string[]>(favoriteCommands);
   const atMenuRef = useRef<HTMLDivElement>(null);
   const atItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const historyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -999,14 +1003,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
   }, [attachedImages.length, clearInput, onBuiltinCommand]);
 
-  const handleSend = useCallback(async () => {
-    const msg = value.trim();
+  // `override` is the quick-pick path: it sends that exact command without
+  // disturbing whatever the user has already typed in the input.
+  const handleSend = useCallback(async (override?: string) => {
+    const msg = (override ?? value).trim();
     if (!msg && !attachedImages.length) return;
     onAudioUnlock?.();
+    if (override !== undefined) setFavoritesMenuOpen(false);
     const builtinAllowed = !isStreaming || offersBuiltinSlashCommandWhileStreaming(msg);
     if (builtinAllowed && await runBuiltinCommand(msg)) return;
     if (isStreaming) return;
-    clearInput();
+    if (override === undefined) clearInput();
     onSend(msg, attachedImages.length ? attachedImages : undefined);
   }, [value, attachedImages, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
@@ -1236,6 +1243,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
     });
   }, []);
+
+  // Optimistic: the star reflects the tap at once, then the whole list is
+  // persisted; a failed write rolls the mark back.
+  const toggleFavoriteCommand = useCallback((name: string) => {
+    const prev = favoriteCommandsRef.current;
+    const next = prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name];
+    favoriteCommandsRef.current = next;
+    setFavoriteCommands(next);
+    void fetch("/api/slash-command-favorites", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ favorites: next }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`favorites update failed: ${res.status}`);
+      })
+      .catch(() => {
+        favoriteCommandsRef.current = prev;
+        setFavoriteCommands(prev);
+      });
+  }, []);
+
+  const isFavoriteCommand = useCallback(
+    (name: string) => favoriteCommands.includes(name),
+    [favoriteCommands],
+  );
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
@@ -1522,6 +1555,27 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
   }, [slashQuery, onLoadSlashCommands]);
 
+  // Load the marked commands once; failures leave the list empty.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/slash-command-favorites")
+      .then((res) => {
+        if (!res.ok) throw new Error(`favorites fetch failed: ${res.status}`);
+        return res.json() as Promise<Partial<SlashCommandFavoritesResponse>>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const names = Array.isArray(data.favorites)
+          ? data.favorites.filter((name): name is string => typeof name === "string")
+          : [];
+        favoriteCommandsRef.current = names;
+        setFavoriteCommands(names);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Lazy-load skill dormancy (disable-model-invocation) each time the slash
   // palette opens, so toggles made in the skills panel are reflected on the
   // next open. Failures degrade silently to the unannotated palette.
@@ -1626,6 +1680,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
       if (controlsMenuRef.current && !controlsMenuRef.current.contains(e.target as Node)) {
         setControlsMenuOpen(false);
+      }
+      if (favoritesMenuRef.current && !favoritesMenuRef.current.contains(e.target as Node)) {
+        setFavoritesMenuOpen(false);
       }
       if (historyMenuRef.current && !historyMenuRef.current.contains(e.target as Node) && !textareaRef.current?.contains(e.target as Node)) {
         setHistoryMenuOpen(false);
@@ -2005,8 +2062,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           const active = index === slashActiveIndex;
                           const dormant = isDormantSkillCommand(command, skillDormancy);
                           return (
-                            <button
+                            <div
                               key={`${command.source}:${command.name}`}
+                              style={{ position: "relative", minWidth: 0, display: "flex" }}
+                            >
+                            <button
                               ref={(node) => {
                                 slashItemRefs.current[index] = node;
                               }}
@@ -2024,7 +2084,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                 flexDirection: "column",
                                 gap: 4,
                                 justifyContent: "center",
-                                padding: "9px 10px",
+                                padding: "9px 28px 9px 10px",
                                 border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
                                 borderRadius: 7,
                                 background: active ? "var(--bg-selected)" : "var(--bg-panel)",
@@ -2070,6 +2130,44 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                 </span>
                               )}
                             </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleFavoriteCommand(command.name);
+                              }}
+                              title={isFavoriteCommand(command.name) ? t("chat.slashFavoriteRemove") : t("chat.slashFavoriteAdd")}
+                              aria-label={isFavoriteCommand(command.name) ? t("chat.slashFavoriteRemove") : t("chat.slashFavoriteAdd")}
+                              aria-pressed={isFavoriteCommand(command.name)}
+                              style={{
+                                position: "absolute",
+                                top: 4,
+                                right: 4,
+                                width: 20,
+                                height: 20,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                padding: 0,
+                                border: "none",
+                                borderRadius: 4,
+                                background: isFavoriteCommand(command.name)
+                                  ? "color-mix(in srgb, var(--accent) 22%, transparent)"
+                                  : "transparent",
+                                color: isFavoriteCommand(command.name) ? "var(--accent)" : "var(--text-dim)",
+                                cursor: "pointer",
+                                opacity: isFavoriteCommand(command.name) ? 1 : 0.55,
+                                lineHeight: 1,
+                              }}
+                            >
+                              {isFavoriteCommand(command.name) ? "★" : "☆"}
+                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -2305,7 +2403,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           ) : (
             <button
-              onClick={handleSend}
+              onClick={() => { void handleSend(); }}
               disabled={!value.trim() && !attachedImages.length}
               title={t("chat.send")}
               aria-label={t("chat.send")}
@@ -2383,6 +2481,94 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <polyline points="21 15 16 10 5 21" />
               </svg>
             </button>
+            {/* Marked commands quick pick, anchored to its own button */}
+            <div ref={favoritesMenuRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={() => setFavoritesMenuOpen((open) => !open)}
+                title={t("chat.slashFavorites")}
+                aria-label={t("chat.slashFavorites")}
+                aria-expanded={favoritesMenuOpen}
+                style={{
+                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 32, height: 32, padding: 0,
+                  background: favoritesMenuOpen ? "var(--bg-selected)" : "none",
+                  border: "none",
+                  borderRadius: 9,
+                  color: favoriteCommands.length ? "var(--accent)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = favoritesMenuOpen ? "var(--bg-selected)" : "none";
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              {favoritesMenuOpen && (
+                <div style={{
+                  position: "absolute",
+                  left: 0,
+                  bottom: "calc(100% + 8px)",
+                  zIndex: 130,
+                  minWidth: 180,
+                  maxHeight: "min(48vh, 320px)",
+                  overflowY: "auto",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
+                  padding: 4,
+                }}>
+                  {favoriteCommands.length === 0 ? (
+                    <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--text-dim)" }}>
+                      {t("chat.slashFavoritesEmpty")}
+                    </div>
+                  ) : (
+                    favoriteCommands.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          void handleSend(`/${name}`);
+                        }}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          padding: "6px 9px",
+                          border: "none",
+                          borderRadius: 6,
+                          background: "none",
+                          color: "var(--text)",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 12.5,
+                          textAlign: "left",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--bg-hover)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "none";
+                        }}
+                      >
+                        /{name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             {/* Model selector - visible always, disabled while the session or switch is busy */}
             {(modelOptions.length > 0 || model || modelError) && onModelChange && (
               <ModelSelector

@@ -827,6 +827,11 @@ export interface NtfyTestResponse {
   error?: string;
 }
 
+/** GET/PUT /api/slash-command-favorites — marked slash commands (names) in pi-web.json. */
+export interface SlashCommandFavoritesResponse {
+  favorites: string[];
+}
+
 export type PluginScope = "global" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 
