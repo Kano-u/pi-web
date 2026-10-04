@@ -129,10 +129,19 @@ export function foldPanes({ bar, panes, onFinish }: FoldOptions): () => void {
  * on screen keeps its place. `foldPanes` compensates by the header's
  * displacement, which is zero once a card has scrolled past; here the panes
  * themselves are what disappears.
+ *
+ * The list's position is read *before* the panes shrink and written back as an
+ * absolute value, exactly as `foldPanes` does. Reading it afterwards would force
+ * the pending layout first, in which the browser's own scroll anchoring has
+ * already given the height back, and subtracting it a second time would scroll
+ * the reader twice as far. Reading first keeps the write on the value anchoring
+ * lands on, so it is a no-op where the browser does the job and the compensation
+ * where it does not (Safari).
  */
 export function collapseOffscreenPanes({ bar, panes }: { bar: HTMLElement | null; panes: HTMLElement[] }): void {
+  const scroller = bar ? scrollableAncestor(bar) : null;
+  const scrollFrom = scroller ? scroller.scrollTop : 0;
   const removed = panes.reduce((sum, pane) => sum + pane.getBoundingClientRect().height, 0);
   for (const pane of panes) pane.style.height = "0px";
-  const scroller = bar ? scrollableAncestor(bar) : null;
-  if (scroller) scroller.scrollTop = Math.max(0, scroller.scrollTop - removed);
+  if (scroller) scroller.scrollTop = Math.max(0, scrollFrom - removed);
 }
