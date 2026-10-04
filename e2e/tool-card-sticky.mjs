@@ -181,5 +181,45 @@ export async function checkToolCardSticky(page, viewport) {
     Math.abs(reopened.pane.height - open.pane.height) < 2,
     `A card reopened mid-fold must be its own height again: ${reopened.pane.height} for ${open.pane.height}`,
   );
-  console.log("PASS: pinned tool-card header, covered gap, and fold that keeps it in place");
+
+  // A card scrolled completely above the list folds itself away, and the list
+  // gives back the height the panes gave up, so the message under the card keeps
+  // its place on screen. Scrolling all the way clears the sticky header too.
+  const offscreen = await card.evaluate((element) => {
+    const list = element.closest(".overflow-y-auto");
+    list.scrollTop += element.getBoundingClientRect().bottom - list.getBoundingClientRect().top + 40;
+    const tail = document.querySelector('[data-entry-id="tail"]');
+    return {
+      listTop: list.getBoundingClientRect().top,
+      cardBottom: element.getBoundingClientRect().bottom,
+      scrollTop: list.scrollTop,
+      paneHeight: [...element.querySelectorAll("[data-pin-pane]")]
+        .reduce((sum, pane) => sum + pane.getBoundingClientRect().height, 0),
+      tailTop: tail ? tail.getBoundingClientRect().top : null,
+    };
+  });
+  assert.ok(offscreen.paneHeight > 0, "The card has to be expanded before it leaves the viewport");
+  assert.ok(offscreen.cardBottom < offscreen.listTop, "The card has to sit completely above the list");
+  assert.ok(offscreen.tailTop !== null, "The fixture renders the trailing message");
+
+  await page.waitForFunction(() => document.querySelectorAll(".tool-card [data-pin-pane]").length === 0);
+  assert.equal(await header.getAttribute("aria-expanded"), "false", "A card scrolled above the list folds itself away");
+
+  const settled = await card.evaluate((element) => {
+    const list = element.closest(".overflow-y-auto");
+    const tail = document.querySelector('[data-entry-id="tail"]');
+    return {
+      scrollTop: list.scrollTop,
+      tailTop: tail ? tail.getBoundingClientRect().top : null,
+    };
+  });
+  assert.ok(
+    Math.abs(settled.tailTop - offscreen.tailTop) < 3,
+    `Auto-collapse must not move the message below the card: ${settled.tailTop} for ${offscreen.tailTop}`,
+  );
+  assert.ok(
+    Math.abs(offscreen.scrollTop - offscreen.paneHeight - settled.scrollTop) < 3,
+    `The list has to come back by the pane height: ${offscreen.scrollTop} -> ${settled.scrollTop}, pane ${offscreen.paneHeight}`,
+  );
+  console.log("PASS: pinned tool-card header, covered gap, fold, and the auto-collapse off screen");
 }

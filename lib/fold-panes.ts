@@ -40,7 +40,7 @@ function prefersReducedMotion(): boolean {
 }
 
 /** The box that actually scrolls the transcript, for the compensating scroll. */
-function scrollableAncestor(element: HTMLElement): HTMLElement | null {
+export function scrollableAncestor(element: HTMLElement): HTMLElement | null {
   for (let node = element.parentElement; node; node = node.parentElement) {
     const { overflowY } = getComputedStyle(node);
     if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") return node;
@@ -121,4 +121,18 @@ export function foldPanes({ bar, panes, onFinish }: FoldOptions): () => void {
   window.requestAnimationFrame(frame);
 
   return settle;
+}
+
+/**
+ * Collapses a card that has already left the viewport: the panes lose their
+ * height at once and the list gives back exactly that much, so the content still
+ * on screen keeps its place. `foldPanes` compensates by the header's
+ * displacement, which is zero once a card has scrolled past; here the panes
+ * themselves are what disappears.
+ */
+export function collapseOffscreenPanes({ bar, panes }: { bar: HTMLElement | null; panes: HTMLElement[] }): void {
+  const removed = panes.reduce((sum, pane) => sum + pane.getBoundingClientRect().height, 0);
+  for (const pane of panes) pane.style.height = "0px";
+  const scroller = bar ? scrollableAncestor(bar) : null;
+  if (scroller) scroller.scrollTop = Math.max(0, scroller.scrollTop - removed);
 }

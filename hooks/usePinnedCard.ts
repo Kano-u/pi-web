@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { foldPanes } from "@/lib/fold-panes";
+import { collapseOffscreenPanes, foldPanes, scrollableAncestor } from "@/lib/fold-panes";
 
 /**
  * The open/expanded state machine of a pinned card, shared by the tool call and
@@ -38,11 +38,15 @@ export function usePinnedCard({ initiallyOpen = false, onToggle }: UsePinnedCard
   const headerRef = useRef<HTMLDivElement | null>(null);
   const finishFoldRef = useRef<(() => void) | null>(null);
 
+  // A card only auto-collapses after it has been on screen once, so a thinking
+  // block below the initial scroll position keeps the expand-all preference.
+  const seenRef = useRef(false);
+
   /** The panes the fold animates, looked up from the card that owns the header. */
-  const panesIn = (): HTMLElement[] => {
+  const panesIn = useCallback((): HTMLElement[] => {
     const card = headerRef.current?.parentElement ?? null;
     return card ? [...card.querySelectorAll<HTMLElement>("[data-pin-pane]")] : [];
-  };
+  }, []);
 
   const toggle = useCallback(() => {
     // A click that lands mid-fold finishes it instead of stacking animations.
@@ -66,7 +70,7 @@ export function usePinnedCard({ initiallyOpen = false, onToggle }: UsePinnedCard
         setExpanded(false);
       },
     });
-  }, [open, onToggle]);
+  }, [open, onToggle, panesIn]);
 
   const setOpen = useCallback((next: boolean) => {
     finishFoldRef.current?.();
@@ -74,10 +78,38 @@ export function usePinnedCard({ initiallyOpen = false, onToggle }: UsePinnedCard
     for (const pane of panesIn()) pane.style.height = "";
     setOpenState(next);
     setExpanded(next);
-  }, []);
+  }, [panesIn]);
 
   // Leaving the card mid-fold must not leave a frame loop running.
   useEffect(() => () => finishFoldRef.current?.(), []);
+
+  // A card that has scrolled above the list folds itself away, so a long
+  // transcript does not carry expanded bodies no one can see. It has to have
+  // been on screen at least once: a card the reader has not reached yet (a
+  // thinking block opened by the expand-all preference) keeps its state.
+  useEffect(() => {
+    if (!open) return;
+    const card = headerRef.current?.parentElement ?? null;
+    const scroller = card ? scrollableAncestor(card) : null;
+    if (!card || !scroller) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          seenRef.current = true;
+          continue;
+        }
+        const rootTop = entry.rootBounds?.top ?? scroller.getBoundingClientRect().top;
+        if (!seenRef.current || entry.boundingClientRect.bottom > rootTop) continue;
+        finishFoldRef.current?.();
+        finishFoldRef.current = null;
+        collapseOffscreenPanes({ bar: headerRef.current, panes: panesIn() });
+        setOpenState(false);
+        setExpanded(false);
+      }
+    }, { root: scroller });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [open, panesIn]);
 
   return { open, expanded, headerRef, toggle, setOpen };
 }
