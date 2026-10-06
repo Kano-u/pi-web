@@ -22,6 +22,12 @@ export async function checkThinkingCardSticky(page, viewport) {
   // The stored preference seeds the initial state, but open it explicitly if the
   // render came up collapsed for any reason.
   if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+  // Opening is that same animation run backwards now, so the pane keeps an inline
+  // height until the unfold settles; the normal path here mounts the card open.
+  await page.waitForFunction(() => {
+    const pane = document.querySelector(".thinking-card [data-pin-pane]");
+    return !!pane && !pane.style.height;
+  });
   await card.locator("[data-pin-pane]").waitFor({ state: "visible" });
   // Thinking bodies are deferred and fetched on expand; wait for the tail of the
   // fixture so the pane is at its full height before it is measured.

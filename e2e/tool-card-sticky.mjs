@@ -4,11 +4,47 @@ import assert from "node:assert/strict";
  * A tall expanded tool card pins its header to the top of the message list with
  * 8px of page background above it, paints nothing from the pane scrolling under
  * it into that room, and folds away with the list coming back by exactly the
- * height the card gave up — the header stays where it was pinned.
+ * height the card gave up — the header stays where it was pinned. Opening a card is
+ * that same animation run backwards, and it is sampled frame by frame below.
  *
  * The card's own box clips nothing, so the header's sticky containing block stays
  * the message list.
  */
+/**
+ * Samples the pane's height every frame until the unfold settles.
+ *
+ * The unfold clears the pane's inline height as its last act, and a card that opens
+ * instantly (reduced motion, or a card that is already open) never writes one at
+ * all, so an empty inline height is what says the height in hand is the final one.
+ */
+function sampleUnfold() {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const samples = [];
+    const tick = () => {
+      const pane = document.querySelector("[data-pin-pane]");
+      if (pane) samples.push({ height: pane.getBoundingClientRect().height, at: performance.now() });
+      if ((pane && !pane.style.height) || performance.now() - started > 2000) {
+        resolve(samples);
+        return;
+      }
+      window.requestAnimationFrame(tick);
+    };
+    window.requestAnimationFrame(tick);
+  });
+}
+
+/**
+ * An unfold ends by clearing the pane's inline height, which is when it is done. The
+ * pane may also be absent — before the commit that mounts it, or after the fold that
+ * removed it — so absence is not "done".
+ */
+const waitForUnfold = (page) =>
+  page.waitForFunction(() => {
+    const pane = document.querySelector("[data-pin-pane]");
+    return !!pane && !pane.style.height;
+  });
+
 export async function checkToolCardSticky(page, viewport) {
   // checkChatAppearance leaves the window wherever its own viewport loop ended.
   await page.setViewportSize(viewport);
@@ -47,12 +83,40 @@ export async function checkToolCardSticky(page, viewport) {
     list.scrollTop += element.getBoundingClientRect().top - list.getBoundingClientRect().top + offset;
   }, delta);
 
+  // The unfold is an animation: sample the pane every frame, from before the click
+  // until it settles, and check the steps it took.
+  const unfolding = page.evaluate(sampleUnfold);
   await header.click();
   await page.locator("[data-pin-pane]").first().waitFor({ state: "visible" });
+  const samples = await unfolding;
+  assert.ok(samples.length >= 5, `The unfold has to run over frames, not in one: ${samples.length} samples`);
+  for (let index = 1; index < samples.length; index += 1) {
+    assert.ok(
+      samples[index].height >= samples[index - 1].height - 0.5,
+      `The pane has to grow, not shrink: ${samples[index - 1].height} -> ${samples[index].height}`
+    );
+  }
+  const deltas = samples.slice(1).map((sample, index) => sample.height - samples[index].height);
+  const third = Math.max(1, Math.floor(deltas.length / 3));
+  const fastestEarly = Math.max(...deltas.slice(0, third));
+  const fastestLate = Math.max(...deltas.slice(-third));
+  const unfoldedMs = samples[samples.length - 1].at - samples[0].at;
+  assert.ok(
+    unfoldedMs > 120 && unfoldedMs < 700,
+    `The unfold has to be one quick pop, not ${Math.round(unfoldedMs)}ms`
+  );
+  assert.ok(
+    fastestEarly > fastestLate + 1,
+    `The unfold has to ease out, not run at one speed: ${fastestEarly}px per frame early, ${fastestLate}px late`
+  );
 
   const open = await measure();
   assert.ok(open.pane, "An expanded card renders its pane");
   assert.ok(open.bar);
+  assert.ok(
+    Math.abs(samples[samples.length - 1].height - open.pane.height) < 1,
+    `The unfold has to settle at the pane's own height: ${samples[samples.length - 1].height} for ${open.pane.height}`
+  );
   assert.ok(open.pane.height > open.list.height, "The pane has to outgrow the viewport to pin the header");
   assert.ok(open.pane.top >= open.bar.bottom - 1, "At rest the pane starts right below the header");
 
@@ -148,8 +212,12 @@ export async function checkToolCardSticky(page, viewport) {
   // Reduced motion drops the animation but not the compensating scroll: that is what
   // keeps the header on screen, not an animation nicety.
   await page.emulateMedia({ reducedMotion: "reduce" });
+  const instant = page.evaluate(sampleUnfold);
   await header.click();
   await page.locator("[data-pin-pane]").first().waitFor({ state: "visible" });
+  // Reduced motion leaves no frames to animate: the sampler catches the card open.
+  const instantSamples = await instant;
+  assert.equal(instantSamples.length, 1, `Reduced motion must open the card at once: ${instantSamples.length} samples`);
   await pin(500);
   await header.click();
   await page.waitForFunction(() => document.querySelectorAll("[data-pin-pane]").length === 0);
@@ -176,6 +244,9 @@ export async function checkToolCardSticky(page, viewport) {
     const bar = document.querySelector(".pin-card-header button");
     return bar?.getAttribute("aria-expanded") === "true" && !!pane && pane.getBoundingClientRect().height > 100;
   });
+  // That predicate is satisfied mid-animation; the height it reads has to be the one
+  // the unfold settles on.
+  await waitForUnfold(page);
   const reopened = await measure();
   assert.ok(
     Math.abs(reopened.pane.height - open.pane.height) < 2,
