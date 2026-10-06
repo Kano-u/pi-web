@@ -16,6 +16,7 @@ import type { GitFileStatus, GitFileStatusKind, GitStatusResponse } from "@/lib/
 import type { FileIndexEntry } from "@/lib/file-fuzzy";
 import { buildSearchTree, type SearchTreeNode } from "@/lib/search-tree";
 import { isArchivePath } from "@/lib/archive-names";
+import { loadExplorerShowIgnored, saveExplorerShowIgnored } from "@/lib/file-explorer-state";
 import { useI18n } from "@/hooks/useI18n";
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -136,9 +137,10 @@ async function responseError(res: Response, fallback: string): Promise<Error> {
   return new Error(message);
 }
 
-async function fetchEntries(dirPath: string): Promise<FileNode[]> {
+async function fetchEntries(dirPath: string, includeIgnored = true): Promise<FileNode[]> {
   const encoded = encodeFilePathForApi(dirPath);
-  const res = await fetch(`/api/files/${encoded}?type=list`);
+  // `includeIgnored=1` is the show-all listing: everything but `.git`/`.DS_Store`.
+  const res = await fetch(`/api/files/${encoded}?type=list${includeIgnored ? "&includeIgnored=1" : ""}`);
   if (!res.ok) throw await responseError(res, "Failed to load files");
   const data = await res.json() as { entries?: FileEntry[] };
   return (data.entries ?? []).map((e) => ({
@@ -342,6 +344,7 @@ export function TreeNode({
   expandedPaths,
   onToggleExpanded,
   refreshToken,
+  includeIgnored,
   highlightedPaths,
   gitStatusByPath,
   changedDirectoryPaths,
@@ -364,6 +367,7 @@ export function TreeNode({
   expandedPaths: Set<string>;
   onToggleExpanded: (fullPath: string, open: boolean) => void;
   refreshToken?: string;
+  includeIgnored: boolean;
   highlightedPaths: Set<string>;
   gitStatusByPath: Map<string, GitFileStatus>;
   changedDirectoryPaths: Set<string>;
@@ -427,7 +431,7 @@ export function TreeNode({
     setLoading(true);
     setLoadError(null);
     try {
-      const entries = await fetchEntries(node.fullPath);
+      const entries = await fetchEntries(node.fullPath, includeIgnored);
       setChildren(entries);
       setLoaded(true);
     } catch (error) {
@@ -435,7 +439,7 @@ export function TreeNode({
     } finally {
       setLoading(false);
     }
-  }, [loaded, node.fullPath]);
+  }, [loaded, node.fullPath, includeIgnored]);
 
   // Re-fetch children when the tree refreshes and the directory is open.
   useEffect(() => {
@@ -443,7 +447,7 @@ export function TreeNode({
       loadChildren(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshToken]);
+  }, [refreshToken, includeIgnored]);
 
   const handleClick = useCallback(() => {
     if (node.isDir) {
@@ -731,6 +735,7 @@ export function TreeNode({
               expandedPaths={expandedPaths}
               onToggleExpanded={onToggleExpanded}
               refreshToken={refreshToken}
+              includeIgnored={includeIgnored}
               highlightedPaths={highlightedPaths}
               gitStatusByPath={gitStatusByPath}
               changedDirectoryPaths={changedDirectoryPaths}
@@ -910,6 +915,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 }, ref) {
   const { t } = useI18n();
   const [roots, setRoots] = useState<FileNode[]>([]);
+  // Show-all by default; the stored preference is read after mount so the
+  // first client render matches the server's.
+  const [includeIgnored, setIncludeIgnored] = useState(true);
+  useEffect(() => {
+    setIncludeIgnored(loadExplorerShowIgnored());
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -1285,6 +1296,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     });
   }, []);
 
+  const toggleIncludeIgnored = useCallback(() => {
+    setIncludeIgnored((current) => {
+      const next = !current;
+      saveExplorerShowIgnored(next);
+      return next;
+    });
+  }, []);
+
   const applyUploadResult = useCallback((data: UploadResponse) => {
     const uploaded = data.uploaded ?? [];
     const skipped = data.skipped ?? [];
@@ -1404,12 +1423,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setLoading(cwdChanged);
     setError(null);
     let cancelled = false;
-    fetchEntries(cwd)
+    fetchEntries(cwd, includeIgnored)
       .then((entries) => { if (!cancelled) setRoots(entries); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [cwd, refreshKey, treeRefreshKey]);
+  }, [cwd, refreshKey, treeRefreshKey, includeIgnored]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1475,6 +1494,26 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /><path d="M12 10v6" /><path d="M9 13h6" />
           </svg>
+        </button>
+        <button
+          type="button"
+          onClick={toggleIncludeIgnored}
+          title={includeIgnored ? t("files.hideIgnoredFiles") : t("files.showIgnoredFiles")}
+          aria-label={includeIgnored ? t("files.hideIgnoredFiles") : t("files.showIgnoredFiles")}
+          aria-pressed={includeIgnored}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 20, padding: 0, border: "none", borderRadius: 4, background: includeIgnored ? "var(--bg-hover)" : "none", color: includeIgnored ? "var(--text)" : "var(--text-dim)", cursor: "pointer" }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+          onMouseLeave={(e) => { if (!includeIgnored) { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; } }}
+        >
+          {includeIgnored ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" /><circle cx="12" cy="12" r="3" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><path d="m1 1 22 22" />
+            </svg>
+          )}
         </button>
         {actionError && (
           <span role="alert" style={{ flex: 1, minWidth: 0, fontSize: 10, color: "#f87171", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={actionError}>
@@ -1662,6 +1701,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                     depth={0}
                     cwd={cwd}
                     onOpenFile={onOpenFile}
+                    includeIgnored={includeIgnored}
                     onAtMention={onAtMention}
                     expandedPaths={searchExpanded}
                     onToggleExpanded={(fullPath, open) => {
@@ -1740,6 +1780,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 expandedPaths={expandedPaths}
                 onToggleExpanded={handleToggleExpanded}
                 refreshToken={refreshToken}
+                includeIgnored={includeIgnored}
                 highlightedPaths={highlightedPaths}
                 gitStatusByPath={gitStatusByPath}
                 changedDirectoryPaths={changedDirectoryPaths}

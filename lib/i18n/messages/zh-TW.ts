@@ -411,6 +411,8 @@ export const zhTWLocale: LocalePlugin = {
     "files.newFolder": "新增資料夾",
     "files.newFileName": "檔案名稱",
     "files.newFolderName": "資料夾名稱",
+    "files.showIgnoredFiles": "顯示已忽略的檔案",
+    "files.hideIgnoredFiles": "隱藏已忽略的檔案",
     "files.menuExtract": "解壓到此處",
     "files.menuCompressZip": "壓縮為 ZIP",
     "files.menuDownload": "下載到本機",

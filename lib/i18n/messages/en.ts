@@ -411,6 +411,8 @@ export const enLocale: LocalePlugin = {
     "files.newFolder": "New folder",
     "files.newFileName": "File name",
     "files.newFolderName": "Folder name",
+    "files.showIgnoredFiles": "Show ignored files",
+    "files.hideIgnoredFiles": "Hide ignored files",
     "files.menuExtract": "Extract here",
     "files.menuCompressZip": "Compress to ZIP",
     "files.menuDownload": "Download to local",

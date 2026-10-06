@@ -783,7 +783,10 @@ export async function GET(
     // Avoid per-entry stat calls for normal files and directories. Symlinks and
     // filesystems without directory type information use the stat fallback.
     const dirents = fs.readdirSync(filePath, { withFileTypes: true });
-    const isVisible = await getFileTreeVisibility(filePath, dirents.map((d) => d.name));
+    // `includeIgnored=1` is the explorer's show-all mode: everything but
+    // `.git` and `.DS_Store`. Visibility only — access rules are unchanged.
+    const includeIgnored = request.nextUrl.searchParams.get("includeIgnored") === "1";
+    const isVisible = await getFileTreeVisibility(filePath, dirents.map((d) => d.name), { includeIgnored });
     const entries = dirents
       .filter((d) => isVisible(d.name))
       .flatMap((d) => {

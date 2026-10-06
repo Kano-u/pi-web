@@ -411,6 +411,8 @@ export const zhCNLocale: LocalePlugin = {
     "files.newFolder": "新建文件夹",
     "files.newFileName": "文件名",
     "files.newFolderName": "文件夹名",
+    "files.showIgnoredFiles": "显示已忽略的文件",
+    "files.hideIgnoredFiles": "隐藏已忽略的文件",
     "files.menuExtract": "解压到此处",
     "files.menuCompressZip": "压缩为 ZIP",
     "files.menuDownload": "下载到本地",

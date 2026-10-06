@@ -145,11 +145,20 @@ export async function readGitIgnoredNames(
   return new Set(matched.filter((name) => !tracked.has(name)));
 }
 
+/** How one listing of a directory is filtered. */
+export interface FileTreeVisibilityOptions {
+  /** List ignored entries too; only `.git` and `.DS_Store` stay hidden. */
+  includeIgnored?: boolean;
+}
+
 /** Build the visibility test for one listing of `directory`. */
 export async function getFileTreeVisibility(
   directory: string,
   names: readonly string[],
+  options: FileTreeVisibilityOptions = {},
 ): Promise<(name: string) => boolean> {
+  // The show-all listing skips Git entirely, so no process runs for it.
+  if (options.includeIgnored) return (name) => !ALWAYS_HIDDEN_NAMES.has(name);
   const candidates = names.filter((name) => !ALWAYS_HIDDEN_NAMES.has(name));
   const ignored = candidates.length > 0 ? await readGitIgnoredNames(directory, candidates) : null;
   if (!ignored) return (name) => !isHiddenOutsideGit(name);
