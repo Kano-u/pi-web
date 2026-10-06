@@ -22,9 +22,12 @@ export interface ThinkingCardProps {
 
 /**
  * Cap the reasoning body so a long chain scrolls inside the card rather than
- * growing the card without bound, matching a tool result's pane.
+ * growing the card without bound, matching a tool result's pane. The cap also
+ * stays within the card's own per-pane one (see `[data-pin-pane]` in
+ * app/globals.css), so on a short viewport this body is the thing that scrolls
+ * rather than a box cut in half inside it.
  */
-const THINKING_BODY_MAX_HEIGHT = 560;
+const THINKING_BODY_MAX_HEIGHT = "min(560px, 70vh)";
 
 /**
  * A thinking block rendered with the shared `PinnedCard`: the title bar pins to

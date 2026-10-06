@@ -13,11 +13,20 @@
  */
 
 /**
- * How long a run takes, whichever direction it goes. A card the reader clicked should
- * pop rather than slide, so this stays short and does not scale with the distance: a
- * tall card simply covers more ground in the same time.
+ * The pop the reader watches: one viewport's worth of the panes' edge, whichever
+ * direction it goes. A card the reader clicked should pop rather than slide, so this
+ * does not scale with the distance — the pixels beyond the viewport are the ones that
+ * stretch, and only as far as HIDDEN_MAX_MS allows.
  */
 const POP_DURATION_MS = 150;
+
+/**
+ * The most the pixels outside the viewport may add to a run, together. They are given
+ * time in proportion to the stretch that is watched, so a card ten screens tall and a
+ * card that just fills the viewport open at the same speed where it shows, and neither
+ * spends that time moving nothing the reader can see.
+ */
+const HIDDEN_MAX_MS = 150;
 
 /**
  * Ease-out quint: a sharp start and a short tail, so the panes pop to where they are
@@ -84,8 +93,42 @@ function runFold({ bar, panes, onFinish, direction }: FoldRun): () => void {
   // list alone — and a scroll offset written there would overwrite whoever else is
   // moving the list, an off-screen card handing its height back included.
   const compensates = direction === 1;
-  // One short duration for both directions: the reader asked for this one either way.
-  const duration = POP_DURATION_MS;
+  // Only the stretch of the panes that crosses the viewport is watched: a pane that
+  // fills the viewport is the longest motion the reader can see, and the pixels beyond
+  // it — above the viewport or below it — only push content around off screen. So the
+  // watched stretch keeps the pop and those pixels are given time in proportion to it,
+  // capped, since a card several screens tall would otherwise spend a second moving
+  // nothing anyone can watch.
+  const total = heights.reduce((sum, height) => sum + height, 0);
+  const scrollerTop = scroller ? scroller.getBoundingClientRect().top : 0;
+  const paneTop = panes[0]?.getBoundingClientRect().top ?? scrollerTop;
+  const bandStart = Math.min(total, Math.max(0, scrollerTop - paneTop));
+  const bandEnd = Math.min(total, scroller ? scrollerTop + scroller.clientHeight - paneTop : total);
+  const watched = bandEnd - bandStart;
+  const hidden = total - watched;
+  const hiddenMs = watched > 0
+    ? Math.min(HIDDEN_MAX_MS, (POP_DURATION_MS * hidden) / watched)
+    : POP_DURATION_MS;
+  const popMs = watched > 0 ? POP_DURATION_MS : 0;
+  // The fraction of the panes the reader can watch go by, for either direction: an
+  // unfold pushes the edge down through the band, a fold lifts it back up past it.
+  const popFrom = direction === 1 ? 1 - bandEnd / total : bandStart / total;
+  const popTo = direction === 1 ? 1 - bandStart / total : bandEnd / total;
+  const leadMs = hidden > 0 ? (hiddenMs * popFrom * total) / hidden : 0;
+  const trailMs = hidden > 0 ? (hiddenMs * (1 - popTo) * total) / hidden : 0;
+  const duration = leadMs + popMs + trailMs;
+  /** How far the run has gone at `elapsed` ms, as a fraction of the panes' height. */
+  const progressAt = (elapsed: number): number => {
+    if (elapsed <= leadMs) {
+      return leadMs > 0 ? popFrom * easeOut(elapsed / leadMs) : popFrom;
+    }
+    if (elapsed <= leadMs + popMs) {
+      const within = popMs > 0 ? (elapsed - leadMs) / popMs : 1;
+      return popFrom + (popTo - popFrom) * easeOut(within);
+    }
+    const within = trailMs > 0 ? (elapsed - leadMs - popMs) / trailMs : 1;
+    return popTo + (1 - popTo) * easeOut(within);
+  };
 
   let finished = false;
   // A reader who wheels or taps mid-fold is scrolling on purpose: keep folding,
@@ -114,7 +157,7 @@ function runFold({ bar, panes, onFinish, direction }: FoldRun): () => void {
 
   // Reduced motion keeps the compensating scroll: it is layout, not animation.
   // A card whose body renders no pane has nothing to animate either.
-  if (panes.length === 0 || prefersReducedMotion()) {
+  if (panes.length === 0 || total <= 0 || prefersReducedMotion()) {
     settle();
     return settle;
   }
@@ -123,13 +166,13 @@ function runFold({ bar, panes, onFinish, direction }: FoldRun): () => void {
   const started = performance.now();
   const frame = (now: number) => {
     if (finished) return;
-    const progress = Math.min(1, (now - started) / duration);
-    const eased = easeOut(progress);
+    const elapsed = now - started;
+    const progress = progressAt(elapsed);
     for (let index = 0; index < panes.length; index += 1) {
-      panes[index].style.height = `${heights[index] * (direction === 1 ? 1 - eased : eased)}px`;
+      panes[index].style.height = `${heights[index] * (direction === 1 ? 1 - progress : progress)}px`;
     }
-    if (compensates && scroller && !wheeled) scroller.scrollTop = scrollFrom - shift * eased;
-    if (progress < 1) {
+    if (compensates && scroller && !wheeled) scroller.scrollTop = scrollFrom - shift * progress;
+    if (elapsed < duration) {
       window.requestAnimationFrame(frame);
       return;
     }

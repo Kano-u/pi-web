@@ -789,9 +789,44 @@ pre, code {
   /* Rounds the panes along the bottom edge; the card itself stays unclipped. */
   overflow: hidden;
 }
-/* Gets an explicit height that the collapse animation drives down to zero. */
+/* Gets an explicit height that the collapse animation drives down to zero, and is
+   capped at one screen: a pane taller than that is cut short as a preview, so the
+   pop the reader watches never has to cross several screens. `data-full` on the
+   card is the reader asking for the whole pane, which the Show-all row sets. */
 .pin-card-body [data-pin-pane] {
   overflow: hidden;
+  max-height: 70vh;
+}
+.pin-card[data-full="true"] .pin-card-body [data-pin-pane] {
+  max-height: none;
+}
+/* A pane that is cut short fades out at its bottom edge, so the cut reads as one.
+   Only a pane that actually overflows carries the attribute. */
+.pin-card-body [data-pin-pane][data-clipped="true"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+}
+/* The row that hands the whole pane back. It sits at the bottom of the body, so a
+   fold takes it away with the panes. Its padding and separator sit on an inner
+   span: the fold drives this pane's own height, and a box whose height is zero
+   still shows its own padding, which would leave 13px of the card behind. */
+.pin-card-show-all {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.pin-card-show-all > span {
+  display: block;
+  padding: 6px 10px;
+  border-top: 1px solid var(--card-border);
+}
+.pin-card-show-all:hover > span {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .markdown-body {

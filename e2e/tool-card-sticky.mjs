@@ -117,7 +117,15 @@ export async function checkToolCardSticky(page, viewport) {
     Math.abs(samples[samples.length - 1].height - open.pane.height) < 1,
     `The unfold has to settle at the pane's own height: ${samples[samples.length - 1].height} for ${open.pane.height}`
   );
-  assert.ok(open.pane.height > open.list.height, "The pane has to outgrow the viewport to pin the header");
+  // A tall pane is a preview by design: the fold only ever has to cross one screen,
+  // which is what keeps the pop something a reader can follow. The card as a whole
+  // may still be taller than the viewport — that is what pins the header.
+  const cap = await page.evaluate(() => window.innerHeight * 0.7);
+  assert.ok(
+    open.pane.height <= cap + 1,
+    `A pane taller than the viewport is cut short at 70vh: ${open.pane.height} against a cap of ${cap}`
+  );
+  assert.ok(open.card.height > open.list.height, "The card still outgrows the viewport, which is what pins its header");
   assert.ok(open.pane.top >= open.bar.bottom - 1, "At rest the pane starts right below the header");
 
   await pin(500);
@@ -194,7 +202,33 @@ export async function checkToolCardSticky(page, viewport) {
   assert.equal(room.reachesPane, true, "The probe must reach the pane below the header");
   assert.deepEqual(room.covered, [], "The pane must not cover the room above the pinned header");
 
-  const before = pinned.list.scrollTop;
+  // The pane that is cut short offers the rest of itself below the panes, and taking
+  // it lifts the cap: the fold stays one pop, and the whole output is still one
+  // click away. The measured attribute is what tells the two apart, so the row is
+  // only ever there when there is more of the pane than the reader can see.
+  const showAll = page.getByRole("button", { name: "Show all" });
+  assert.equal(await showAll.count(), 1, "A pane that is cut short offers the rest of itself");
+  assert.equal(
+    await page.locator("[data-pin-pane]").first().getAttribute("data-clipped"),
+    "true",
+    "The pane that is cut short carries the fade"
+  );
+  await showAll.click();
+  await page.waitForFunction(() => !document.querySelector("[data-pin-pane][data-clipped='true']"));
+  const full = await measure();
+  assert.ok(
+    full.pane.height > cap + 1,
+    `Show all has to hand the pane its own height back: ${full.pane.height} against a cap of ${cap}`
+  );
+  assert.equal(await page.locator("[data-pin-pane]").first().getAttribute("data-clipped"), null);
+  assert.equal(await showAll.count(), 0, "The row goes away once the whole pane is out");
+  assert.equal(await card.getAttribute("data-full"), "true");
+  assert.equal(await header.getAttribute("aria-expanded"), "true", "Show all must leave the card open");
+  assert.ok(
+    Math.abs((full.bar.top - full.list.top) - 8) < 0.6,
+    `Show all must leave the pinned header where it was, not at ${full.bar.top - full.list.top}`
+  );
+  const before = full.list.scrollTop;
   await header.click();
   await page.waitForFunction(() => document.querySelectorAll("[data-pin-pane]").length === 0);
   const folded = await measure();

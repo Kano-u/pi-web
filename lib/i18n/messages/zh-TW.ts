@@ -441,6 +441,7 @@ export const zhTWLocale: LocalePlugin = {
     "chat.toolTimeoutEnding": "即將終止",
     "chat.thinking": "正在思考...",
     "chat.processDetails": "處理詳細資料",
+    "chat.showAll": "顯示全部",
     "chat.message": "則訊息",
     "chat.messages": "則訊息",
     "chat.toolCall": "次工具呼叫",
