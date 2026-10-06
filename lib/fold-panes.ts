@@ -41,6 +41,21 @@ function easeOut(progress: number): number {
   return 1 - remaining * remaining * remaining;
 }
 
+/** How much of the fold runs at a constant speed, underneath the ease-out. */
+const FOLD_LINEAR_FLOOR = 0.3;
+
+/**
+ * The fold's easing: a share of the run held at a constant speed under the ease-out,
+ * so the last stretch keeps moving instead of creeping to a halt. Cubic ease-out
+ * alone spends 46% of the run on its final tenth of the distance; holding a third of
+ * the run at the average speed cuts that to 28%, and the creep the reader actually
+ * feels — the last hundredth — from 22% of the run to 3%. The fold lands at that
+ * speed instead of fading out at the end.
+ */
+function foldEasing(progress: number): number {
+  return FOLD_LINEAR_FLOOR * progress + (1 - FOLD_LINEAR_FLOOR) * easeOut(progress);
+}
+
 /**
  * Ease-out quint, for the unfold: a sharper start than the fold's cubic and a far
  * shorter tail, so the card pops open and is simply there once it lands.
@@ -149,7 +164,7 @@ function runFold({ bar, panes, onFinish, direction }: FoldRun): () => void {
   const frame = (now: number) => {
     if (finished) return;
     const progress = Math.min(1, (now - started) / duration);
-    const eased = direction === 1 ? easeOut(progress) : easeOutQuint(progress);
+    const eased = direction === 1 ? foldEasing(progress) : easeOutQuint(progress);
     for (let index = 0; index < panes.length; index += 1) {
       panes[index].style.height = `${heights[index] * (direction === 1 ? 1 - eased : eased)}px`;
     }
