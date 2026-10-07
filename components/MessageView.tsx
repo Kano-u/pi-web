@@ -1089,7 +1089,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         )}
       </button>
       {expanded && (
-        <div
+        <div className="thinking-block-content"
           style={{
             flex: 1,
             minWidth: 0,

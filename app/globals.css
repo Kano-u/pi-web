@@ -974,6 +974,24 @@ pre, code {
   margin-top: 3px;
 }
 
+/* Thinking block: keep one long expansion from filling the chat. The cap sits
+   on the reasoning text, so subtract the card's own 6px top/bottom padding and
+   1px borders (14px) to keep the whole thinking card within half the screen. */
+.thinking-block-content {
+  max-height: calc(50dvh - 14px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* Phones (same 640px breakpoint as hooks/useIsMobile.ts): a third of the screen. */
+@media (max-width: 640px) {
+  .thinking-block-content {
+    max-height: calc(33.3333dvh - 14px);
+  }
+}
+
 .markdown-code-block {
   position: relative;
   width: 100%;
