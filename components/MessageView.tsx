@@ -1049,7 +1049,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
 
   return (
     <div style={{
-      display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
+      display: "flex", flexDirection: "column", gap: 6, minWidth: 0,
       border: "1px solid var(--border)",
       borderRadius: 7,
       padding: "6px 10px",
@@ -1058,41 +1058,44 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
       fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
       lineHeight: 1.5,
     }}>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
-        title={t("i18n.thinking")}
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          width: expanded ? "auto" : "100%",
-          flexShrink: expanded ? 0 : 1,
-          minWidth: 0,
-          minHeight: "1.5em",
-          padding: 0,
-          background: "transparent",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          font: "inherit",
-          textAlign: "left",
-        }}
-      >
-        <ThinkingIcon active={expanded} />
-        <span style={{ flexShrink: 0, fontWeight: 600 }}>{t("i18n.thinking")}</span>
-        {!expanded && (
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
-          </span>
-        )}
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
+          title={t("i18n.thinking")}
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            flex: 1,
+            minWidth: 0,
+            minHeight: "1.5em",
+            padding: 0,
+            background: "transparent",
+            border: "none",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            font: "inherit",
+            textAlign: "left",
+          }}
+        >
+          <ThinkingIcon active={expanded} />
+          <span style={{ flexShrink: 0, fontWeight: 600, flexGrow: expanded ? 1 : 0 }}>{t("i18n.thinking")}</span>
+          {!expanded && (
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+              {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
+            </span>
+          )}
+          {duration !== undefined && (
+            <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+          )}
+        </button>
+      </div>
       {expanded && (
         <div className="thinking-block-content"
           style={{
-            flex: 1,
             minWidth: 0,
             color: error ? "#f87171" : "var(--text-muted)",
             whiteSpace: "pre-wrap",
@@ -1101,9 +1104,6 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         >
            {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
         </div>
-      )}
-      {duration !== undefined && (
-        <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
       )}
     </div>
   );
