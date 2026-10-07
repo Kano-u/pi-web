@@ -435,7 +435,6 @@ export const zhCNLocale: LocalePlugin = {
     "chat.toolTimeoutEnding": "即将终止",
     "chat.thinking": "正在思考...",
     "chat.processDetails": "处理详情",
-    "chat.showAll": "显示全部",
     "chat.message": "条消息",
     "chat.messages": "条消息",
     "chat.toolCall": "次工具调用",

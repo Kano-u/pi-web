@@ -1,21 +1,21 @@
 "use client";
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
-import { ThinkingCard } from "./ThinkingCard";
-import { PinnedCard } from "./PinnedCard";
+import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
+import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
 import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName } from "@/lib/tool-names";
 import { formatDurationLabel } from "@/lib/duration-format";
 import { ShellTimeoutBadge } from "./ShellTimeoutBadge";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
-import { usePinnedCard } from "@/hooks/usePinnedCard";
+import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -88,6 +88,9 @@ function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, te
   return baseTokens + estimateTokens(text.slice(suffixStart));
 }
 
+const MAX_THINKING_CACHE_ENTRIES = 100;
+const thinkingContentCache = new Map<string, Promise<string>>();
+
 // Messages larger than this skip markdown rendering entirely. react-markdown +
 // KaTeX + syntax highlighting on multi-hundred-KB payloads (e.g. pasted HAR or
 // log dumps) freezes the browser main thread.
@@ -153,6 +156,35 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
 // Cap the user "sent" bubble's height so an abnormally long message does not
 // push the conversation off screen; overflow scrolls inside the bubble.
 const USER_BUBBLE_MAX_HEIGHT = 300;
+
+function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
+  const key = `${sessionId}:${entryId}:${blockIndex}`;
+  const cached = thinkingContentCache.get(key);
+  if (cached) {
+    thinkingContentCache.delete(key);
+    thinkingContentCache.set(key, cached);
+    return cached;
+  }
+
+  const request = fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
+  ).then(async (response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json() as { thinking?: unknown };
+    if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
+    return data.thinking;
+  }).catch((error) => {
+    thinkingContentCache.delete(key);
+    throw error;
+  });
+
+  thinkingContentCache.set(key, request);
+  if (thinkingContentCache.size > MAX_THINKING_CACHE_ENTRIES) {
+    const oldestKey = thinkingContentCache.keys().next().value;
+    if (oldestKey) thinkingContentCache.delete(oldestKey);
+  }
+  return request;
+}
 
 interface Props {
   message: AgentMessage;
@@ -968,9 +1000,112 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   entryId?: string;
   blockIndex: number;
 }) {
-  // The card lives in its own file so the pinned-card work stays out of
-  // MessageView's frequently-synced upstream code.
-  return <ThinkingCard block={block} duration={duration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const tRef = useRef(t);
+  tRef.current = t;
+  const preview = getThinkingPreview(block.thinking);
+
+  // Keep already-mounted blocks in sync when the preference changes.
+  useEffect(() => {
+    const onChange = () => setExpanded(isThinkingExpandedByDefault());
+    window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
+    return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
+  }, []);
+
+  // Load deferred history content whenever the block is expanded.
+  // loadThinkingContent() memoizes in-flight promises and drops failed ones
+  // from its cache, so re-running this effect is cheap and a failed load can
+  // be retried by collapsing and expanding the block again.
+  useEffect(() => {
+    if (!expanded || !block.deferred || content !== null) return;
+    if (!sessionId || !entryId) {
+      setError(tRef.current("i18n.thinkingUnavailable"));
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    loadThinkingContent(sessionId, entryId, blockIndex)
+      .then((value) => {
+        if (!cancelled) {
+          setContent(value);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
+      border: "1px solid var(--border)",
+      borderRadius: 7,
+      padding: "6px 10px",
+      background: "var(--bg)",
+      fontFamily: "var(--font-mono)",
+      fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
+      lineHeight: 1.5,
+    }}>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
+        title={t("i18n.thinking")}
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          width: expanded ? 14 : "100%",
+          flexShrink: expanded ? 0 : 1,
+          minWidth: 0,
+          minHeight: "1.5em",
+          padding: 0,
+          background: "transparent",
+          border: "none",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+          font: "inherit",
+          textAlign: "left",
+        }}
+      >
+        <ThinkingIcon active={expanded} />
+        {!expanded && (
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            color: error ? "#f87171" : "var(--text-muted)",
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+          }}
+        >
+           {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
+        </div>
+      )}
+      {duration !== undefined && (
+        <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+      )}
+    </div>
+  );
 }
 
 function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
@@ -981,13 +1116,12 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
 
 function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; toolStartedAt?: number; onOpenSession?: (sessionId: string) => void }) {
   const { t } = useI18n();
-  // The reader's state, which the chevron follows right away. `expanded` trails
-  // it while the panes fold away, so the collapse animation still has content to
-  // animate and unmounts it only once it has reached zero height.
-  const { open, expanded, headerRef, toggle } = usePinnedCard({
-    initiallyOpen: () => isToolCallExpanded(block.toolCallId),
-    onToggle: (next) => setToolCallExpanded(block.toolCallId, next),
-  });
+  const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
+  const toggleExpanded = () => {
+    const next = !expanded;
+    setToolCallExpanded(block.toolCallId, next);
+    setExpanded(next);
+  };
   const inputStr = getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
@@ -996,6 +1130,12 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
   const patchLabel = isApplyPatchToolName(block.toolName)
     ? summarizeApplyPatchInput(block)
     : null;
+  // A shell call that has not reported back yet: the duration slot below stays
+  // empty until it does, so it shows the timeout the command was given instead.
+  // Pi streams a running shell tool's output as a partial result with no
+  // timestamp, and the duration is derived from that timestamp, so a result
+  // without one is exactly a call that is still running.
+  const shellTimeout = isShellToolName(block.toolName) ? getShellTimeout(block.input) : null;
   // A script and the calls it made, instead of the input JSON. Streamed input is
   // still incomplete JSON and keeps the generic view.
   const codemodeCode = block.toolName === CODEMODE_TOOL_NAME && !isStreamingInput ? codemodeScript(block.input) : null;
@@ -1005,13 +1145,6 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
 
   // `server/tool` instead of the registered `mcp__server__tool`, as pi's TUI shows it.
   const mcpLabel = mcpToolLabel(block.toolName, result?.details);
-
-  // A shell call that has not reported back yet: the duration slot below stays
-  // empty until it does, so it counts down the timeout the command was given
-  // instead. Pi streams a running shell tool's output as a partial result with
-  // no timestamp, and the duration is derived from that timestamp, so a result
-  // without one is exactly a call that is still running.
-  const shellTimeout = isShellToolName(block.toolName) ? getShellTimeout(block.input) : null;
 
   // Result display
   const resultContent = result ? (codemode ? stripCodemodeHeader(result.content) : result.content) : [];
@@ -1026,92 +1159,81 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
   const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
 
-  // What the card shows below its header, and which of those sections fold away.
-  // Result images are not one of them: they are shown whether or not the details
-  // are open, so a fold has to leave them where they are.
-  const showsCodemode = expanded && Boolean(codemode);
-  const showsArgs = expanded && !patchFiles && (isStreamingInput || !isEditTool);
-  const showsPatch = expanded && Boolean(patchFiles);
-  const showsResult = expanded && Boolean(result) && !patchFiles && !codemodeRunning
-    && (Boolean(resultDiff) || !resultIsEmpty || resultImages.length === 0);
-  const hasBody = showsArgs || showsCodemode || showsPatch || showsResult || resultImages.length > 0;
   return (
-    <PinnedCard
-      kind="tool"
-      headerRef={headerRef}
-      expanded={expanded}
-      hasBody={hasBody}
-      error={isError}
-      style={{ fontSize: 12 }}
-      header={
-        <>
+    <div
+      style={{
+        borderRadius: 7,
+        overflow: "hidden",
+        fontSize: 12,
+        border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
+        background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
+      }}
+    >
+      {/* ── Tool call header ── */}
+      <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
+        <button
+          onClick={toggleExpanded}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            flex: 1,
+            minWidth: 0,
+            padding: "6px 10px",
+            background: "none",
+            border: "none",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: 12,
+            textAlign: "left",
+          }}
+        >
+          <span
+            title={mcpLabel ? block.toolName : undefined}
+            style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}
+          >
+            {mcpLabel ? (
+              <>
+                <span style={{ fontWeight: 500, opacity: 0.75 }}>{mcpLabel.server}/</span>
+                {mcpLabel.tool}
+              </>
+            ) : block.toolName}
+          </span>
+          <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+            {isStreamingInput
+              ? t("chat.generatingToolInput")
+              : (patchLabel ?? (codemode ? codemodeScriptPreview(codemode.code) : getToolPreview(block)))}
+          </span>
+          {codemodeCallCount > 0 && (
+            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+              {codemodeCallCount === 1 ? t("codemode.callCountOne") : t("codemode.callCount", { count: codemodeCallCount })}
+            </span>
+          )}
+          {duration !== undefined && (
+            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
+          )}
+          {shellTimeout !== null && !result?.timestamp && (
+            <ShellTimeoutBadge timeout={shellTimeout} startedAt={toolStartedAt} />
+          )}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+            <polyline points="2 3.5 5 6.5 8 3.5" />
+          </svg>
+        </button>
+        {subagent && onOpenSession && (
           <button
             type="button"
-            aria-expanded={open}
-            onClick={toggle}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              flex: 1,
-              minWidth: 0,
-              padding: "6px 10px",
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 12,
-              textAlign: "left",
-            }}
+            onClick={() => onOpenSession(subagent.sessionId)}
+            title={t("subagent.open")}
+            aria-label={t("subagent.open")}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
           >
-            <span
-              title={mcpLabel ? block.toolName : undefined}
-              style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}
-            >
-              {mcpLabel ? (
-                <>
-                  <span style={{ fontWeight: 500, opacity: 0.75 }}>{mcpLabel.server}/</span>
-                  {mcpLabel.tool}
-                </>
-              ) : block.toolName}
-            </span>
-            <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-              {isStreamingInput
-                ? t("chat.generatingToolInput")
-                : (patchLabel ?? (codemode ? codemodeScriptPreview(codemode.code) : getToolPreview(block)))}
-            </span>
-            {codemodeCallCount > 0 && (
-              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                {codemodeCallCount === 1 ? t("codemode.callCountOne") : t("codemode.callCount", { count: codemodeCallCount })}
-              </span>
-            )}
-            {duration !== undefined && (
-              <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
-            )}
-            {shellTimeout !== null && !result?.timestamp && (
-              <ShellTimeoutBadge timeout={shellTimeout} startedAt={toolStartedAt} />
-            )}
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-              <polyline points="2 3.5 5 6.5 8 3.5" />
-            </svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
           </button>
-          {subagent && onOpenSession && (
-            <button
-              type="button"
-              onClick={() => onOpenSession(subagent.sessionId)}
-              title={t("subagent.open")}
-              aria-label={t("subagent.open")}
-              style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
-            </button>
-          )}
-        </>
-      }
-    >
+        )}
+      </div>
+
       {/* ── Expanded: input args (only when no richer view exists); a codemode script in place of its JSON ── */}
-      {showsArgs && (
-      <div data-pin-pane="">
+      {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
         <pre
           style={{
             margin: 0,
@@ -1128,51 +1250,45 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
         >
           {codemode ? codemode.code.replace(/\r/g, "").trimEnd() : inputStr}
         </pre>
-      </div>
       )}
 
       {/* ── Expanded: the calls a codemode script made ── */}
-      {showsCodemode && codemode && (
-      <div data-pin-pane="">
+      {expanded && codemode && (
         <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} isError={isError} />
-      </div>
       )}
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
       {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
 
-      {/* ── Expanded: applied-patch split diff and its failure text ── */}
-      {showsPatch && patchFiles && (
-      <div data-pin-pane="">
+      {/* ── Expanded: applied-patch split diff ── */}
+      {expanded && patchFiles && (
         <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
           <SplitFilesView files={patchFiles} />
         </div>
-        {result && isError && (
-          <PairedResult
-            text={resultText ?? ""}
-            isEmpty={resultIsEmpty}
-            isError={isError}
-          />
-        )}
-      </div>
       )}
+
       {/* ── Paired result — only shown when expanded ── */}
-      {showsResult && (
-      <div data-pin-pane="">
-        {resultDiff ? (
+      {expanded && result && patchFiles && isError && (
+        <PairedResult
+          text={resultText ?? ""}
+          isEmpty={resultIsEmpty}
+          isError={isError}
+        />
+      )}
+      {expanded && result && !patchFiles && !codemodeRunning && (
+        resultDiff ? (
           <PairedDiffResult
             diff={resultDiff}
           />
-        ) : (
+        ) : (!resultIsEmpty || resultImages.length === 0) && (
           <PairedResult
             text={resultText ?? ""}
             isEmpty={resultIsEmpty}
             isError={isError}
           />
-        )}
-      </div>
+        )
       )}
-    </PinnedCard>
+    </div>
   );
 }
 

@@ -435,7 +435,6 @@ export const enLocale: LocalePlugin = {
     "chat.toolTimeoutEnding": "terminating soon",
     "chat.thinking": "Thinking...",
     "chat.processDetails": "Process details",
-    "chat.showAll": "Show all",
     "chat.message": "message",
     "chat.messages": "messages",
     "chat.toolCall": "tool call",
