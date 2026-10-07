@@ -29,9 +29,13 @@ test("renders the capped, scroll-styled thinking body around its text", () => {
 test("pins the tail follow to a streaming message that is still at the bottom", async () => {
   const source = await readFile(new URL("./ThinkingBody.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /import \{ isScrollAtTail \} from "@\/lib\/chat-lazy-load"/);
-  assert.match(source, /atTail\.current = isScrollAtTail\(el\.scrollTop, el\.clientHeight, el\.scrollHeight\)/);
-  assert.match(source, /if \(!el \|\| !follow \|\| !atTail\.current\) return;\s*el\.scrollTop = el\.scrollHeight;/);
+  assert.match(source, /import \{ getLiveFollowAttached \} from "@\/lib\/chat-lazy-load"/);
+  // The decision comes from lib, not from a bare tail test: the browser nudges
+  // `scrollTop` when the growing content first overflows, so the listener keeps
+  // the previous position and the attached flag `getLiveFollowAttached` needs.
+  assert.match(source, /followAttached\.current = getLiveFollowAttached\(\s*followAttached\.current,\s*previousScrollTop\.current,\s*scrollTop,\s*el\.clientHeight,\s*el\.scrollHeight,\s*\)/);
+  assert.match(source, /previousScrollTop\.current = scrollTop;/);
+  assert.match(source, /if \(!el \|\| !follow \|\| !followAttached\.current\) return;\s*el\.scrollTop = el\.scrollHeight;/);
   // No dependency list, so it runs on every streaming chunk.
   assert.match(source, /el\.scrollTop = el\.scrollHeight;\s*\}\);/);
 });
