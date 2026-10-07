@@ -17,6 +17,7 @@ import { ShellTimeoutBadge } from "./ShellTimeoutBadge";
 import { ThinkingBody } from "./ThinkingBody";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
 import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
+import { getThinkingExpansion, setThinkingExpansion } from "@/lib/thinking-expansion-state";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -1003,7 +1004,15 @@ export function ThinkingBlock({ block, duration, isStreaming, sessionId, entryId
   blockIndex: number;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
+  // The reader's own choice outlives this instance: the streaming message is
+  // re-rendered from the message list (and re-keyed once `entryIds` arrive),
+  // which remounts the block and would otherwise drop the expansion.
+  const [expanded, setExpanded] = useState(() => getThinkingExpansion(blockIndex, block.thinking) ?? isThinkingExpandedByDefault());
+  const toggle = () => {
+    const next = !expanded;
+    setThinkingExpansion(blockIndex, block.thinking, next);
+    setExpanded(next);
+  };
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1066,7 +1075,7 @@ export function ThinkingBlock({ block, duration, isStreaming, sessionId, entryId
           aria-expanded={expanded}
           aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
           title={t("i18n.thinking")}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={toggle}
           style={{
             display: "inline-flex",
             alignItems: "center",

@@ -7,6 +7,7 @@ import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecuti
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { hasOpenedThinking } from "@/lib/thinking-expansion-state";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
@@ -181,11 +182,17 @@ function withAssistantBlocks(
   return next;
 }
 
-function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = false, reveal = false, children, t }: { messageCount: number; toolCallCount: number; defaultExpanded?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
+function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = false, rememberedOpen = false, reveal = false, children, t }: { messageCount: number; toolCallCount: number; defaultExpanded?: boolean; rememberedOpen?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   useLayoutEffect(() => {
     if (reveal) setExpanded(true);
   }, [reveal]);
+  // A reader who opened a thinking block in this turn keeps the section open
+  // across the re-key above: that remount would otherwise hide the block outright.
+  // Only the initial state follows the memory, so a manual collapse still sticks.
+  useLayoutEffect(() => {
+    if (rememberedOpen) setExpanded(true);
+  }, [rememberedOpen]);
   const parts = [t("chat.processDetails"), `${messageCount} ${t(messageCount === 1 ? "chat.message" : "chat.messages")}`];
   if (toolCallCount > 0) parts.push(`${toolCallCount} ${t(toolCallCount === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
 
@@ -1114,6 +1121,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 const finalProcessEnd = finalAssistant.content.indexOf(finalSplit.answerBlocks[0]);
                 // Keep the original prefix so deferred thinking retains its stored block indices.
                 const finalProcessBlocks = finalAssistant.content.slice(0, finalProcessEnd < 0 ? undefined : finalProcessEnd);
+                // A reader who opened a thinking block in this turn keeps the process
+                // section open: it collapses by default once the turn has an answer,
+                // which would otherwise hide the block while the turn still streams.
+                const openedProcess = hasOpenedThinking(finalProcessBlocks);
 
                 const processViews: ReactNode[] = [];
                 let processToolCount = 0;
@@ -1155,7 +1166,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                           would otherwise stay open once its answer shows up, e.g. when
                           switching between an answered and an unanswered leaf of the same
                           turn. Manual toggles survive every other re-render. */}
-                      <ProcessDetailsGroup key={finalAnswerMessage ? "answered" : "unanswered"} messageCount={processViews.length} toolCallCount={processToolCount} defaultExpanded={!finalAnswerMessage} reveal={revealProcess} t={t}>
+                      <ProcessDetailsGroup key={finalAnswerMessage ? "answered" : "unanswered"} messageCount={processViews.length} toolCallCount={processToolCount} defaultExpanded={!finalAnswerMessage} rememberedOpen={openedProcess} reveal={revealProcess} t={t}>
                         {processViews}
                       </ProcessDetailsGroup>
                     </div>,
