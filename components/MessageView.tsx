@@ -1068,7 +1068,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
           display: "inline-flex",
           alignItems: "center",
           gap: 6,
-          width: expanded ? 14 : "100%",
+          width: expanded ? "auto" : "100%",
           flexShrink: expanded ? 0 : 1,
           minWidth: 0,
           minHeight: "1.5em",
@@ -1082,6 +1082,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         }}
       >
         <ThinkingIcon active={expanded} />
+        <span style={{ flexShrink: 0, fontWeight: 600 }}>{t("i18n.thinking")}</span>
         {!expanded && (
           <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
