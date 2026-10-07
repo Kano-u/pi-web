@@ -14,6 +14,7 @@ import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatc
 import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName } from "@/lib/tool-names";
 import { formatDurationLabel } from "@/lib/duration-format";
 import { ShellTimeoutBadge } from "./ShellTimeoutBadge";
+import { ThinkingBody } from "./ThinkingBody";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
 import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
@@ -978,7 +979,7 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} isStreaming={isStreaming} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -993,9 +994,10 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+export function ThinkingBlock({ block, duration, isStreaming, sessionId, entryId, blockIndex }: {
   block: ThinkingContent;
   duration?: number;
+  isStreaming?: boolean;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
@@ -1094,16 +1096,9 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         </button>
       </div>
       {expanded && (
-        <div className="thinking-block-content"
-          style={{
-            minWidth: 0,
-            color: error ? "#f87171" : "var(--text-muted)",
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
-        >
-           {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
-        </div>
+        <ThinkingBody follow={isStreaming === true} color={error ? "#f87171" : "var(--text-muted)"}>
+          {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
+        </ThinkingBody>
       )}
     </div>
   );
