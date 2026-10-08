@@ -11,7 +11,7 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
-import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName } from "@/lib/tool-names";
+import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName, isWriteToolName } from "@/lib/tool-names";
 import { formatDurationLabel } from "@/lib/duration-format";
 import { ShellTimeoutBadge } from "./ShellTimeoutBadge";
 import { ThinkingBody } from "./ThinkingBody";
@@ -1127,7 +1127,7 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
     setToolCallExpanded(block.toolCallId, next);
     setExpanded(next);
   };
-  const inputStr = getToolCallInputText(block);
+  const inputStr = getWrittenFileText(block) ?? getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
@@ -1925,6 +1925,18 @@ function safeJson(value: unknown): string {
 
 export function getToolCallInputText(block: ToolCallContent): string {
   return block.rawInput ?? JSON.stringify(block.input, null, 2);
+}
+
+const WRITE_VIEW_KEYS = new Set(["path", "file_path", "content"]);
+
+// A write's file text in place of its JSON. Streamed input is still incomplete
+// JSON, and any other argument (a mode, a title) would vanish from this view,
+// so those calls, and an empty file, keep the generic view.
+function getWrittenFileText(block: ToolCallContent): string | null {
+  if (block.rawInput !== undefined || !isWriteToolName(block.toolName)) return null;
+  const { content } = block.input;
+  if (typeof content !== "string" || content === "") return null;
+  return Object.keys(block.input).every((key) => WRITE_VIEW_KEYS.has(key)) ? content : null;
 }
 
 function formatCustomType(type: string): string {

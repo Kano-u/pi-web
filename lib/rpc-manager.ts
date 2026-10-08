@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -7,6 +7,7 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
+import { findDeferredModel, rememberProviderModels } from "./deferred-provider-models";
 import {
   createProjectCommandBashExtension,
   createProjectCommandBashOperations,
@@ -36,6 +37,7 @@ import {
   listSubagentProfiles,
   readSubagentRun,
   readSubagentSessionResources,
+  subagentExtensionLoaderOptions,
   SUBAGENT_CONTROL_TOOL_NAMES,
 } from "./subagents";
 import { createSubagentController } from "./subagent-runtime";
@@ -47,6 +49,7 @@ import { createPiWebBuiltinExtensions } from "./builtin-extensions";
 import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
+import { createSubagentSkillsBinding } from "./subagent-skills";
 import { isNestedToolExecutionEvent } from "./agent-event-wire";
 import {
   appendClearedSessionToolSelection,
@@ -1966,7 +1969,7 @@ const SUBAGENT_CONTROLLER = createSubagentController({
   registerSession: (inner, options) => {
     const wrapper = new AgentSessionWrapper(inner, {
       ...(options?.exactSystemPrompt !== undefined
-        ? { exactSystemPrompt: () => options.exactSystemPrompt! }
+        ? { exactSystemPrompt: options.exactSystemPrompt }
         : {}),
       chatOnly: options?.chatOnly,
       suppressCompletionNotifications: true,
@@ -2355,20 +2358,25 @@ export async function startRpcSession(
     // after the session is created, so the getter is filled in below.
     const exactSystemPromptRef: { current?: () => string } = {};
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
-    const usesExactSystemPrompt = chatOnly || subagentResources?.exactSystemPrompt !== undefined;
     // codemode, tool-search, and mcp, as the pi CLI loads them, and the host that decides
     // which MCP servers the session connects (ADR 0006).
     const builtins = subagentResources || chatOnly
       ? undefined
       : await createPiWebBuiltinExtensions({ agentDir });
+    const skillsBinding = subagentResources ? createSubagentSkillsBinding({
+      loadSkills: subagentResources.loadSkills,
+      skills: subagentResources.skills,
+      exactSystemPrompt: subagentResources.exactSystemPrompt
+        ?? (chatOnly ? subagentResources.appendSystemPrompt[0] ?? "" : undefined),
+    }) : undefined;
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
       settingsManager,
       resourceLoaderOptions: subagentResources
         ? {
-            noExtensions: !subagentResources.loadExtensions,
-            noSkills: !subagentResources.loadSkills,
+            ...subagentExtensionLoaderOptions(subagentResources),
+            ...skillsBinding!.loaderOptions,
             noPromptTemplates: true,
             noThemes: true,
             noContextFiles: true,
@@ -2379,7 +2387,6 @@ export async function startRpcSession(
                 }
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
-            ...(usesExactSystemPrompt ? { extensionFactories: [exactSystemPromptExtension] } : {}),
           }
         : chatOnly
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension] }
@@ -2405,7 +2412,12 @@ export async function startRpcSession(
       services.modelRuntime,
       services.settingsManager.getEnabledModels(),
     );
-    const effectiveInitialModel = initialModel && (
+    // A provider an extension registers only at session_start (lib/deferred-provider-models.ts)
+    // has no model in this runtime yet: build on the default, switch once extensions are bound.
+    const deferredInitialModel = initialModel && !services.modelRuntime.getModel(initialModel.provider, initialModel.modelId)
+      ? findDeferredModel(services.modelRuntime, initialModel.provider, initialModel.modelId)
+      : undefined;
+    const effectiveInitialModel = initialModel && !deferredInitialModel && (
       !allowInitialModelFallback
       || scope.visible.some((model) => model.provider === initialModel.provider && model.id === initialModel.modelId)
     )
@@ -2432,6 +2444,11 @@ export async function startRpcSession(
     const startupModel = restoredModel && services.modelRuntime.hasConfiguredAuth(restoredModel.provider)
       ? restoredModel
       : initial?.model;
+    const deferredModel = hasExistingMessages
+      ? savedModel && !restoredModel
+        ? findDeferredModel(services.modelRuntime, savedModel.provider, savedModel.modelId)
+        : undefined
+      : deferredInitialModel;
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -2453,12 +2470,11 @@ export async function startRpcSession(
       );
     }
 
-    const exactSystemPrompt = subagentResources?.exactSystemPrompt !== undefined
-      ? () => subagentResources.exactSystemPrompt!
+    skillsBinding?.setActiveToolsGetter(() => inner.getActiveToolNames());
+    const exactSystemPrompt = subagentResources
+      ? skillsBinding!.getExactSystemPrompt
       : chatOnly
-        ? subagentResources
-          ? () => subagentResources.appendSystemPrompt[0] ?? ""
-          : () => contextFilesSystemPrompt(inner.resourceLoader.getAgentsFiles().agentsFiles)
+        ? () => contextFilesSystemPrompt(inner.resourceLoader.getAgentsFiles().agentsFiles)
         : undefined;
     exactSystemPromptRef.current = exactSystemPrompt;
     const wrapper = new AgentSessionWrapper(inner, {
@@ -2477,6 +2493,21 @@ export async function startRpcSession(
     });
     const realSessionId = inner.sessionId as string;
     registerRpcWrapper(wrapper);
+
+    if (!chatOnly) {
+      if (deferredModel) {
+        try {
+          await wrapper.waitUntilReady();
+          await wrapper.send({ type: "set_model", provider: deferredModel.provider, modelId: deferredModel.id });
+        } catch (error) {
+          console.error(`[pi-web] could not switch to ${deferredModel.provider}/${deferredModel.id}:`, error instanceof Error ? error.message : error);
+        }
+      }
+      // Bound extensions may have registered providers a later model listing will not see.
+      void wrapper.waitUntilReady()
+        .then(() => rememberProviderModels(inner.modelRuntime as ModelRuntime))
+        .catch(() => undefined);
+    }
 
     return { session: wrapper, realSessionId };
   })().finally(() => {
