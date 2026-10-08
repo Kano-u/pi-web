@@ -10,7 +10,7 @@ The reasoning behind the fork-only entries below lives in [docs/agents/fork.md](
 
 ### Known failing test (intentionally kept)
 
-`npm test` comes out at 2373 tests / 2372 pass / 1 fail / 0 skipped in ~19s (upstream's count plus the fork-only `lib/terminal-pty.test.mjs`). The single failure is environment-induced rather than a regression, and is deliberately left alone to keep the fork aligned with upstream: `lib/skill-lock.test.mjs`'s "uses the CLI global lock location" passes `xdgStateHome: undefined` to mean "no XDG variable", but a default parameter re-reads `process.env.XDG_STATE_HOME`, which this shell exports. `env -u XDG_STATE_HOME node --experimental-strip-types --test lib/skill-lock.test.mjs` passes 4/4. The two `lib/file-archives.test.mjs` archive tests skip when `bsdtar` is missing (`sudo apt install libarchive-tools`). Anything else that fails is a real regression.
+`npm test` comes out at 2489 tests / 2487 pass / 1 fail / 1 skipped in ~20s (upstream's count plus the fork-only `lib/terminal-pty.test.mjs`). The single failure is environment-induced rather than a regression, and is deliberately left alone to keep the fork aligned with upstream: `lib/skill-lock.test.mjs`'s "uses the CLI global lock location" passes `xdgStateHome: undefined` to mean "no XDG variable", but a default parameter re-reads `process.env.XDG_STATE_HOME`, which this shell exports. `env -u XDG_STATE_HOME node --experimental-strip-types --test lib/skill-lock.test.mjs` passes 4/4. The one skip is upstream's Windows-only `lib/linked-directory.test.mjs` "allows a Windows junction after its target is explicitly allowed"; the `lib/file-archives.test.mjs` archive tests add two more skips when `bsdtar` is missing (`sudo apt install libarchive-tools`). Anything else that fails is a real regression.
 
 ### Fork-only additions (not in upstream)
 
@@ -144,8 +144,10 @@ lib/
   enabled-models.ts         pure minimal-edit engine for the enabledModels pattern list
   enabled-models-runtime.ts SDK adapter for enabledModels: pattern resolution, provider kinds, settings IO
   subagent-settings.ts      read/write ~/.pi/agent/agents/settings.json
+  subagent-skills.ts        a profile's skills: list preloaded into the child's prompt, and its exact system prompt
   file-access.ts            allowed file roots for /api/files and worktrees
   file-upload-client.ts     browser upload to /api/files ?type=upload, shared by the explorer and chat drops
+  file-upload.ts            upload conflict strategies and the pre-upload check of an upload target (server)
   linked-directory.ts       directory links leading outside the allowed roots + the allow-link check
   file-paths.ts             client/server path encoding helpers
   file-tree-visibility.ts   which entries the file tree lists (git check-ignore, name-list fallback)
@@ -154,6 +156,7 @@ lib/
   worktree.ts               project/worktree resolution and git worktree operations
   draft-store.ts            local draft persistence
   extension-ui-queue.ts     FIFO queues for extension dialogs and custom panels, by request id
+  extension-dialog-fit.ts   width an extension dialog needs so its code blocks and tables do not scroll sideways
   markdown.ts               shared markdown helpers
   gfm-autolink-email-loader.cjs  bundler loader: remark-gfm's email regex without a lookbehind literal
   node-cli.ts               locate bundled npm-cli.js / npx-cli.js to spawn npm/npx without a shell (Windows)
@@ -239,7 +242,7 @@ Design decisions and traps live in `docs/agents/`, one note per area. Read every
 - [settings-ui.md](docs/agents/settings-ui.md): Plugins and Skills routes, sidebar group switches, the shared `SettingsUi` blocks every settings panel and add pane uses. Files: `app/api/plugins/**`, `app/api/skills/**`, `components/SettingsUi.tsx`, `components/settings-ui-helpers.ts`, `components/SkillsConfig.tsx`, `components/PluginsConfig.tsx`; also before adding a settings section or add pane.
 - [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`.
 - [client-platform.md](docs/agents/client-platform.md): mobile software keyboard and viewport height, completion sound. Files: `hooks/useViewportHeight.ts`, `hooks/useAudio.ts`, the keyboard-open CSS.
-- [fork.md](docs/agents/fork.md): fork-only design notes — the shell timeout badge, the thinking block's title / click target / tail follow / expansion memory / height cap, the New project layer, the directory picker's sort, the explorer's file management, and the Bun terminal backend. Files: the fork-only ones named in `AGENTS.md`.
+- [fork.md](docs/agents/fork.md): fork-only design notes — the shell timeout badge, the thinking block's title / click target / tail follow / expansion memory / height cap, the New project layer, the directory picker's sort, the explorer's file management, the Bun terminal backend, and one sync-log entry per upstream sync with the conflicts it hit. Files: the fork-only ones named in `AGENTS.md`.
 
 ---
 

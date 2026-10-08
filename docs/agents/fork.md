@@ -88,3 +88,20 @@ Upstream's `ThinkingBlock` (`components/MessageView.tsx`, an upstream-synced fil
 A long expanded body also used to grow without bound and push the rest of the chat off screen. It is capped at half the screen on desktop and a third on phones (the same `(max-width: 640px)` breakpoint as `hooks/useIsMobile.ts`). The rule is `.thinking-block-content` in `app/globals.css` — `max-height: calc(50dvh - 14px)`, `overflow-y: auto`, `overflow-x: hidden`, `overscroll-behavior: contain`, `scrollbar-gutter: stable` (the same scroll conventions as `.extension-widget-panels`), overridden to `calc(33.3333dvh - 14px)` under the phone media query. The 14px subtraction is the card's own 6px top/bottom padding plus its 1px borders, so the whole card — not just its text — stays within the screen fraction.
 
 The cap is one `className` in `app/globals.css`; the rest is style objects and one `isStreaming` prop in the upstream-synced `components/MessageView.tsx`, plus the fork-only `components/ThinkingBody.tsx` and `lib/thinking-expansion-state.ts`, and the `openedProcess` half in the upstream-synced `components/ChatWindow.tsx`. The deferred/loading content fetch and the bulb's active colour are upstream's; the expand/collapse state is upstream's too, the fork only seeds it from the remembered choice and records the reader's own toggle. `components/ThinkingBody.test.mjs` pins the class, the `getLiveFollowAttached` call and the `isStreaming` wiring, and `lib/thinking-expansion-state.test.mjs` pins the remembered expansion; the title, the click target and the body placement are pinned by nothing — a sync that brings upstream's `ThinkingBlock` back will silently drop the title, shrink the click target to the icon again and return the body to the icon's right, so re-apply from this note.
+
+## Sync log
+
+### 6fcd7d4 → a096af3 (v0.10.0 → beyond, 22 commits, merged as 851b8cf)
+
+The merge touched 76 files and produced exactly one conflict: the `lib/tool-names` import line in `components/MessageView.tsx`, where upstream added `isWriteToolName` beside the fork's `getShellTimeout` / `isShellToolName`. Resolution keeps all four names on one line and leaves `formatDurationLabel`, `ShellTimeoutBadge` and `ThinkingBody` imports in place.
+
+Every fork-added line survived. Checked mechanically: for each file both sides changed, every line the fork added since 6fcd7d4 (`git diff 6fcd7d4 <pre-merge kano> -- <file>`, `+` rows) was matched with `grep -F` inside the merged file — 15 files, 0 misses apart from the deliberately rewritten import line. The dangerous overlaps and what happened to them:
+
+- `components/ChatWindow.tsx` — upstream's new `onFilesUploaded` prop (file drops) and its `ProcessDetailsGroup` one-line signature change do not touch the fork's `openedProcess` / `rememberedOpen` wiring (lines 1167 and 1209 after the merge).
+- `components/AppShell.tsx` — upstream's `onFilesUploaded={handleExplorerRefresh}` sits beside the fork's `onFileMutated={handleExplorerRefresh}`; `FILE_PANEL_TOGGLE_SIZE` and `getProjectTabs` are intact.
+- `components/SessionSidebar.tsx` — upstream replaced the SMIL spinners with CSS animations *including the one inside the fork-only `showProjectActivity`* (compact ring mode and `onUnreadSessionIdsChange` unchanged). The new `@keyframes spin` / `unread-ping` rules in `app/globals.css` coexist with `.thinking-block-content`.
+- `components/FileExplorer.tsx` — upstream extracted `uploadFiles` and its types to `lib/file-upload-client.ts`; the merge left the import and no duplicate definition.
+- `lib/markdown.ts` — the new `remark-cjk-friendly/parseOnly` plugin carries no lookbehind or class static block, so the old-Safari rules in AGENTS.md still hold; `next.config.ts` and its remark-gfm loader were not touched.
+- `docs/agents/fork.md` — no assertion in this file needed rewriting; the thinking-block and shell-badge descriptions still match the merged code.
+
+A sync that brings upstream's `ThinkingBlock`, `ProcessDetailsGroup` or the `FileExplorer` upload path back must re-check the four items above by the same line-matching method, because git resolves all of them silently.
