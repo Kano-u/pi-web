@@ -12,3 +12,4 @@
 | --- | --- | --- |
 | [#899](https://github.com/agegr/pi-web/pull/899) | feat(files): file management for the explorer — create, rename, delete, download, archives, and in-place editing | ✅ 已摘取 c13bd1c（上游以「超出薄前端范围」关闭该 PR，本地保留，属永久分叉） |
 | [#892](https://github.com/agegr/pi-web/pull/892) | feat: let users customize the "Use default directory" path | ✅ 保留本地实现（上游以 #996 的 `~/pi-cwd/YYYYMMDD` 关闭了 #892；我们另立一层「新建项目」目录设置：`lib/default-project.ts` + `GET/PUT/POST /api/default-project` 读写 `~/.pi/agent/pi-web.json` 的 `defaultProjectPath`，目录选择器另有排序与自定义路径入口。不动 #996 的 `/api/default-cwd`，因此与上游不冲突） |
+| [#1090](https://github.com/agegr/pi-web/pull/1090) | feat(sidebar): Git history panel with per-commit file diffs | ✅ 已摘取 dffa00c |
