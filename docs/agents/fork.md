@@ -105,3 +105,17 @@ Every fork-added line survived. Checked mechanically: for each file both sides c
 - `docs/agents/fork.md` — no assertion in this file needed rewriting; the thinking-block and shell-badge descriptions still match the merged code.
 
 A sync that brings upstream's `ThinkingBlock`, `ProcessDetailsGroup` or the `FileExplorer` upload path back must re-check the four items above by the same line-matching method, because git resolves all of them silently.
+
+### Taken before upstream merged it: #1090 (Git history panel, merged as dffa00c)
+
+`PRS.md` records the PR as taken; the reasoning that does not fit its one-line row lives here. #1090 is not a fork-only feature — it is upstream code adopted early, so its ledger row is meant to disappear once upstream merges it and a sync brings the same panel over. Until then it is a real divergence: the fork carries `lib/git-history.ts`, `lib/git-repository-request.ts`, `app/api/git/log|commit`, `components/GitHistory.tsx` and `GitCommitDiffViewer.tsx` on top of `main`.
+
+Taking it cost exactly four conflicts, all of them because the fork had already edited the same lines:
+
+- `lib/file-explorer-state.ts` / `.test.mjs` — upstream appended `GIT_HISTORY_OPEN_STORAGE_KEY` / `loadGitHistoryOpen` / `saveGitHistoryOpen` right after `saveExplorerOpen`, which is where the fork's `EXPLORER_SHOW_IGNORED_STORAGE_KEY` and its two functions sit. Both blocks were kept, the fork's first, and the merged test file imports all six functions.
+- `components/SessionSidebar.tsx` — one line: the component signature. Upstream added `onOpenCommitFile` next to `onOpenFile`; the fork added `onUnreadSessionIdsChange` at the end. Both names are kept in the merged signature.
+- `AGENTS.md` — the topic-note index. The fork's `models.md` line (session_start providers, `lib/deferred-provider-models.ts`) wins over upstream's stale copy of it, and the `files-and-access.md` line is the fork's version plus upstream's `Git history` mention and its four new file names.
+
+Everything else merged by itself, including the PR's rewrite of `components/AppShell.tsx` (commit-diff tabs, next to the fork's `onFileMutated` and `getProjectTabs`) and its additions to `lib/git-types.ts`, which is a fork file upstream does not know about. The fork's `showProjectActivity` ring, the explorer's show-ignored toggle and the 28px file-panel toggle all survived; `node_modules/.bin/tsc --noEmit`, `npm run lint` and `npm test` (2499 pass, the one known `lib/skill-lock` environment failure, 1 skip) were run on the merged tree.
+
+When a later sync brings #1090 in from upstream, delete its row from `PRS.md` and expect these same four files to conflict again — this time with a new panel to keep, not to add.
