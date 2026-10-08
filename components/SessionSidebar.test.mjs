@@ -43,7 +43,7 @@ test("only Shift+click bypasses session deletion confirmation", () => {
 test("persists and exposes a vertical session/explorer resize handle", () => {
   assert.match(source, /axis: "vertical"/);
   assert.match(source, /storageKey: "pi-web:sidebar-session-pane-height"/);
-  assert.match(source, /Math\.round\(\(paneHeight \+ explorerHeight\) \/ 2\)/);
+  assert.match(source, /Math\.round\(\(paneHeight \+ explorerHeight \+ historyHeight\) \/ 2\)/);
   assert.match(source, /ref=\{sessionPaneRef\}[\s\S]*?<SessionSearch/);
   assert.match(source, /data-resize-handle="sidebar-sections"/);
   assert.match(source, /sidebar-section-resize-handle/);
@@ -53,6 +53,18 @@ test("persists and exposes a vertical session/explorer resize handle", () => {
   assert.match(source, /borderTop: "1px solid var\(--border\)"/);
   assert.match(source, /var\(--sidebar-session-pane-height, 320px\)/);
   assert.match(source, /minHeight: explorerOpen \? EXPLORER_PANE_MIN_HEIGHT : 0/);
+});
+
+test("shows a resizable Git history section below the explorer once the cwd is a repository", () => {
+  assert.match(source, /storageKey: "pi-web:sidebar-git-history-height"/);
+  assert.match(source, /growthDirection: "up"/);
+  assert.match(source, /data-resize-handle="sidebar-git-history"/);
+  assert.match(source, /\{explorerOpen && gitHistoryShown && \(/);
+  assert.match(source, /display: gitHistoryAvailable \? "flex" : "none"/);
+  assert.match(source, /<GitHistory[\s\S]*?refreshKey=\{explorerKey\}[\s\S]*?onAvailableChange=\{setGitHistoryAvailable\}/);
+  // The session list keeps its height while the explorer or history is open.
+  assert.match(source, /const lowerPaneOpen = hasSidebarCwd && \(explorerOpen \|\| gitHistoryShown\)/);
+  assert.match(source, /flex: lowerPaneOpen\s*\? "0 1 var\(--sidebar-session-pane-height, 320px\)"/);
 });
 
 test("does not register row-level session deletion shortcuts", () => {
