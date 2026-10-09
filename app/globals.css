@@ -2179,11 +2179,34 @@ span.token.table {
    shared cell rule still pads `0 12px`. The fork always renders the icon, so the
    cell is a fixed, unpadded 36px like the search cell. Two classes, because
    sidebar.css is imported after this file and order decides at equal ones;
-   upstream's three `[data-fit]` rules say the same thing. */
+   upstream's three `[data-fit]` rules say the same thing. The right border goes
+   too: upstream draws it to separate this cell from the search toggle, and with
+   the New project cell now in between it would sit between two cells of one
+   group. */
 .sidebar-header .sidebar-new-button {
   width: 36px;
   gap: 0;
   padding: 0;
+  border-right: 0;
+}
+
+/* Fork: the two tab cells are icon-only as well, so the header is one row of
+   identical cells. Upstream hides a tab's label only at data-fit 2
+   (app/sidebar.css) and keeps it clipped in the DOM as the tab's own name; the
+   fork hides it at every width with that same rule, and takes the padding
+   upstream gives that state so an icon-only tab is the same 36px cell as the
+   rest — 13px icon, 11px either side, 1px border. */
+.sidebar-header .sidebar-tab {
+  padding: 0 11px;
+}
+
+.sidebar-header .sidebar-tab-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* Fork: the files tab's action row is the tree bar too. The fork's new file and
