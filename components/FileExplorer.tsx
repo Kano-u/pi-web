@@ -55,6 +55,8 @@ interface Props {
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
   onUploadBusyChange?: (busy: boolean) => void;
+  /** Fork-only: the files tab's action row holds the new-file / new-folder buttons now. */
+  onFileMutationBusyChange?: (busy: boolean) => void;
   /** Called after a successful file mutation (create/rename/delete) so panels showing Git state can refresh. */
   onFileMutated?: () => void;
   changesCollapsed: boolean;
@@ -67,6 +69,8 @@ interface Props {
 
 export interface FileExplorerHandle {
   openUploadPicker: () => void;
+  /** The inline new-file / new-folder row, from the files tab's action row. */
+  startCreate: (type: "file" | "dir") => void;
 }
 
 type UploadPhase = "idle" | "checking" | "uploading";
@@ -898,6 +902,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   onAtMention,
   onAtMentions,
   onUploadBusyChange,
+  onFileMutationBusyChange,
   onFileMutated,
   changesCollapsed,
   onChangesCountChange,
@@ -1374,13 +1379,23 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     openUploadPicker() {
       if (!uploadBusy) uploadInputRef.current?.click();
     },
-  }), [uploadBusy]);
+    startCreate(type) {
+      startCreate(cwd, type);
+    },
+  }), [cwd, startCreate, uploadBusy]);
 
   useEffect(() => {
     onUploadBusyChange?.(uploadBusy);
   }, [onUploadBusyChange, uploadBusy]);
 
   useEffect(() => () => onUploadBusyChange?.(false), [onUploadBusyChange]);
+
+  // The head's action row disables the two create buttons while a mutation or
+  // the inline create row is open, the way the explorer's own row used to.
+  const createBusy = mutating || creating !== null;
+  useEffect(() => {
+    onFileMutationBusyChange?.(createBusy);
+  }, [createBusy, onFileMutationBusyChange]);
 
   useEffect(() => {
     const cwdChanged = prevCwdRef.current !== cwd;
@@ -1445,44 +1460,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   return (
     <div style={{ minHeight: "100%" }}>
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
-      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "3px 6px", borderBottom: "1px solid var(--border)" }}>
-        <button
-          type="button"
-          onClick={() => { setRenaming(null); startCreate(cwd, "file"); }}
-          disabled={mutating || creating !== null}
-          title={t("files.newFile")}
-          aria-label={t("files.newFile")}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 20, padding: 0, border: "none", borderRadius: 4, background: "none", color: "var(--text-dim)", cursor: "pointer" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M14 3v5h5" /><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M12 11v6" /><path d="M9 14h6" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => { setRenaming(null); startCreate(cwd, "dir"); }}
-          disabled={mutating || creating !== null}
-          title={t("files.newFolder")}
-          aria-label={t("files.newFolder")}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 20, padding: 0, border: "none", borderRadius: 4, background: "none", color: "var(--text-dim)", cursor: "pointer" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /><path d="M12 10v6" /><path d="M9 13h6" />
-          </svg>
-        </button>
-        {actionError && (
+      {actionError && (
+        <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "3px 6px", borderBottom: "1px solid var(--border)" }}>
           <span role="alert" style={{ flex: 1, minWidth: 0, fontSize: 10, color: "#f87171", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={actionError}>
             {actionError}
           </span>
-        )}
-        {actionError && (
           <DismissButton onClick={() => setActionError(null)} title={t("files.dismissError")} />
-        )}
-      </div>
+        </div>
+      )}
       {creating && creating.parentDir === cwd && (
         <div style={{ padding: "2px 4px" }}>
           <CreateEntryInput

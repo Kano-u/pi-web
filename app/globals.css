@@ -2172,6 +2172,28 @@ span.token.table {
   cursor: default;
   opacity: 0.6;
 }
+
+/* Fork: the files tab's action row is the tree bar too. The fork's new file and
+   new folder moved up from the explorer's own bar, so its cells are that bar's
+   22×20 rather than the toolbar's 32px — every other state (color, hover,
+   pressed, done, disabled, focus ring) stays upstream's `.sidebar-tool-button`.
+   Eight cells need to fit the sidebar's 180px minimum: `min-width` lets them
+   give way together, the way upstream's six do at 21px. Touch keeps upstream's
+   taller cells; this rule is two classes, so it outranks its `(pointer: coarse)`
+   one and has to restate it. */
+.sidebar-files-actions .sidebar-tool-button {
+  flex: 0 1 22px;
+  min-width: 14px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+@media (pointer: coarse) {
+  .sidebar-files-actions .sidebar-tool-button {
+    flex-basis: 36px;
+    height: 36px;
+  }
+}
 .right-panel-overlay-backdrop {
   display: none;
 }

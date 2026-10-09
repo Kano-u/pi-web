@@ -179,7 +179,7 @@ test("sessions and files are two tabs of one sidebar, both kept mounted", () => 
   assert.doesNotMatch(source, /--sidebar-session-pane-height|explorerOpen|file-explorer-state/);
 });
 
-test("the files tab's head holds the picker and its six buttons, always the same ones in the same places", () => {
+test("the files tab's head holds the picker and its eight buttons, always the same ones in the same places", () => {
   const html = render({ selectedCwd: "/work/alpha", onOpenTerminal: noop });
   const panel = html.slice(html.indexOf('id="session-sidebar-panel-files"'));
   const head = panel.slice(panel.indexOf('<div class="sidebar-files-head">'), panel.indexOf('<div class="sidebar-files-scroll'));
@@ -199,6 +199,10 @@ test("the files tab's head holds the picker and its six buttons, always the same
     "Open workspace terminal",
     "Open in file manager",
     "Upload files to project root",
+    // The fork's two create buttons ride in this row too, after upload: they
+    // drive the explorer's inline create rows through its handle.
+    "New file",
+    "New folder",
     "Refresh file list",
     "Show ignored files pressed=false",
     "0 changed files (disabled) pressed=false",
@@ -213,7 +217,7 @@ test("the files tab's head holds the picker and its six buttons, always the same
   assert.doesNotMatch(head, /Search files/);
   assert.match(source, /disabled=\{changesCount === 0\}\s*title=\{t\("sidebar\.changedFiles", \{ count: changesCount \}\)\}\s*pressed=\{changesCount > 0 && !changesCollapsed\}/);
   assert.doesNotMatch(source, /changesCount > 0 && \(\s*<ToolbarIconButton/);
-  // Without a terminal (no onOpenTerminal) the other five stay.
+  // Without a terminal (no onOpenTerminal) the other seven stay.
   const noTerminal = render({ selectedCwd: "/work/alpha" });
   assert.doesNotMatch(noTerminal, /Open workspace terminal/);
   assert.match(noTerminal, /aria-label="Open in file manager"/);

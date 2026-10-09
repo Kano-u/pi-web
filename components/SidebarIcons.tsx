@@ -163,6 +163,18 @@ export function FolderPlusIcon(props: SidebarIconProps) {
   );
 }
 
+/** Fork-only: the files tab's New file button (upstream has no file-plus icon). */
+export function FilePlusIcon(props: SidebarIconProps) {
+  return (
+    <SidebarIcon {...props}>
+      <path d="M14 3v5h5" />
+      <path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+      <path d="M12 11v6" />
+      <path d="M9 14h6" />
+    </SidebarIcon>
+  );
+}
+
 export function TerminalIcon(props: SidebarIconProps) {
   return (
     <SidebarIcon {...props}>

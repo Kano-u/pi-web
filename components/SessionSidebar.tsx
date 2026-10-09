@@ -76,7 +76,9 @@ import {
   DotIcon,
   DotOutlineIcon,
   EyeIcon,
+  FilePlusIcon,
   FolderIcon,
+  FolderPlusIcon,
   MessageIcon,
   ForkIcon,
   PencilIcon,
@@ -475,6 +477,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [worktreeLoadingCwd, setWorktreeLoadingCwd] = useState<string | null>(null);
   const [explorerKey, setExplorerKey] = useState(0);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
+  const [explorerMutating, setExplorerMutating] = useState(false);
   const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
@@ -2359,7 +2362,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               stays (disabled) while there is nothing changed, so nothing
               moves as an agent edits files and commits. The folder's
               actions first, the tree's two views last (what it lists, then
-              its changes); its search is the header's search button. */}
+              its changes); its search is the header's search button. The fork's
+              new file and new folder live in this row too, rather than in a
+              second bar of their own inside the tree, and it drives them
+              through the explorer's handle. */}
           {explorerCwd && (
             <div className="sidebar-files-actions" role="group" aria-label={t("sidebar.fileActions")}>
               {onOpenTerminal && (
@@ -2367,7 +2373,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   onClick={() => onOpenTerminal(explorerCwd)}
                   title={t("terminal.open")}
                 >
-                  <TerminalIcon size={14} />
+                  <TerminalIcon size={13} />
                 </ToolbarIconButton>
               )}
               <ToolbarIconButton
@@ -2377,14 +2383,28 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   ? t(fileManager?.reason === "remote" ? "sidebar.openInExplorerRemoteOnly" : "sidebar.openInExplorerUnsupported")
                   : fileManagerLabel}
               >
-                <FolderIcon size={14} />
+                <FolderIcon size={13} />
               </ToolbarIconButton>
               <ToolbarIconButton
                 onClick={() => fileExplorerRef.current?.openUploadPicker()}
                 disabled={explorerUploadBusy}
                 title={t("sidebar.uploadFilesTitle")}
               >
-                <UploadIcon size={14} />
+                <UploadIcon size={13} />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                onClick={() => fileExplorerRef.current?.startCreate("file")}
+                disabled={explorerMutating}
+                title={t("files.newFile")}
+              >
+                <FilePlusIcon size={13} />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                onClick={() => fileExplorerRef.current?.startCreate("dir")}
+                disabled={explorerMutating}
+                title={t("files.newFolder")}
+              >
+                <FolderPlusIcon size={13} />
               </ToolbarIconButton>
               <ToolbarIconButton
                 onClick={() => {
@@ -2397,7 +2417,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 title={t("sidebar.refreshExplorer")}
                 done={explorerRefreshDone}
               >
-                {explorerRefreshDone ? <CheckIcon size={14} /> : <RefreshIcon size={14} />}
+                {explorerRefreshDone ? <CheckIcon size={13} /> : <RefreshIcon size={13} />}
               </ToolbarIconButton>
               <ToolbarIconButton
                 onClick={() => {
@@ -2409,7 +2429,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 pressed={showIgnoredFiles}
                 className="sidebar-files-views-start"
               >
-                <EyeIcon size={14} />
+                <EyeIcon size={13} />
               </ToolbarIconButton>
               <ToolbarIconButton
                 onClick={() => setChangesCollapsed((v) => !v)}
@@ -2417,7 +2437,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 title={t("sidebar.changedFiles", { count: changesCount })}
                 pressed={changesCount > 0 && !changesCollapsed}
               >
-                <ChangesIcon size={14} />
+                <ChangesIcon size={13} />
               </ToolbarIconButton>
             </div>
           )}
@@ -2441,6 +2461,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               onAtMention={onAtMention}
               onAtMentions={onAtMentions}
               onUploadBusyChange={setExplorerUploadBusy}
+              onFileMutationBusyChange={setExplorerMutating}
               changesCollapsed={changesCollapsed}
               onChangesCountChange={setChangesCount}
               fileSearchOpen={fileSearchOpen}
