@@ -151,6 +151,12 @@ test("sessions and files are two tabs of one sidebar, both kept mounted", () => 
   // which the picker owns, so only the accessible name is asserted here.)
   assert.match(html, /<button type="button" class="sidebar-new-button"[^>]*aria-label="New"><svg[^>]*viewBox="0 0 16 16"[^>]*>[\s\S]*?<\/svg><\/button><button type="button" title="New project"[^>]*>[\s\S]*?<\/button><button type="button" title="Search conversations"/);
   assert.doesNotMatch(html, /sidebar-new-label/);
+  // The three glyphs are weight-matched rather than sized as upstream leaves
+  // them: the filled ring carries a hairline stroke in its own colour (a
+  // stroke on a filled path only fattens it) and the New project folder is
+  // drawn in a 15px box, not 16px, so all three land near 1.2–1.3px.
+  assert.match(html, /<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" stroke="currentColor" stroke-width="0\.25"/);
+  assert.match(html, /<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"/);
   assert.doesNotMatch(html, /View options|Pi Web/);
   const sessionsTab = openingTag(html, "session-sidebar-tab-sessions");
   const filesTab = openingTag(html, "session-sidebar-tab-files");
@@ -818,6 +824,9 @@ test("the fork's New project entry sits in the header and opens its dialog", () 
   assert.match(source, /title=\{t\("sidebar\.newProject"\)\}/);
   // Styled as one of the header's cells, the way the search toggle is.
   assert.match(source, /title=\{t\("sidebar\.newProject"\)\}\n\s+aria-label=\{t\("sidebar\.newProject"\)\}\n\s+className="sidebar-search-toggle"/);
+  // Drawn in a 15px box so its 2/24 stroke matches the New session glyph's
+  // weight instead of reading heavier than the search toggle beside it.
+  assert.match(source, /<svg width="15" height="15" viewBox="0 0 24 24"/);
   assert.match(source, /await fetch\("\/api\/default-project"\)/);
   assert.match(source, /await fetch\("\/api\/default-project", \{/);
   assert.match(source, /setNewProjectOpen\(true\)/);

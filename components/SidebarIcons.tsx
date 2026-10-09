@@ -260,6 +260,13 @@ export function SpinnerIcon({ className, ...props }: SidebarIconProps) {
  * cell's muted/dim/accent state still decides how it looks. Hence it does not
  * go through `SidebarIcon`, whose 24 grid and `stroke="currentColor"` would
  * draw this same path as a hollow outline.
+ *
+ * The ring's ribbon is about 1.2 of the box's 16 units, so at the header
+ * cell's 13px it read thinner than the stroked cells beside it (the search's
+ * 24 grid at `size={16}` weighs 2/24*16 ≈ 1.33px). The hairline stroke below
+ * is the same colour as the fill, so it only fattens the shape — to ~1.18px,
+ * level with the folder and near enough to the magnifier — and
+ * `strokeLinejoin="round"` keeps the tail's notch from growing a spike.
  */
 export function NewSessionIcon({ size = 13, className, label }: SidebarIconProps) {
   return (
@@ -268,6 +275,9 @@ export function NewSessionIcon({ size = 13, className, label }: SidebarIconProps
       height={size}
       viewBox="0 0 16 16"
       fill="currentColor"
+      stroke="currentColor"
+      strokeWidth={0.25}
+      strokeLinejoin="round"
       className={className}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
     >
