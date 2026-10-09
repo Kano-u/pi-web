@@ -827,6 +827,9 @@ test("the fork's New project entry sits in the header and opens its dialog", () 
   // Drawn in a 15px box so its 2/24 stroke matches the New session glyph's
   // weight instead of reading heavier than the search toggle beside it.
   assert.match(source, /<svg width="15" height="15" viewBox="0 0 24 24"/);
+  // Its plus sits a unit left of the body's centre (12), because the tab
+  // filling the top left otherwise reads as pushing the glyph right.
+  assert.match(source, /<line x1="11" y1="11" x2="11" y2="17" \/>/);
   assert.match(source, /await fetch\("\/api\/default-project"\)/);
   assert.match(source, /await fetch\("\/api\/default-project", \{/);
   assert.match(source, /setNewProjectOpen\(true\)/);
