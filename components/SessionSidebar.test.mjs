@@ -807,6 +807,8 @@ test("the files tab carries the fork's Git history pane and its resizer", () => 
 test("the fork's New project entry sits in the header and opens its dialog", () => {
   assert.match(source, /import \{ NewProjectDialog \} from "\.\/NewProjectDialog";/);
   assert.match(source, /title=\{t\("sidebar\.newProject"\)\}/);
+  // Styled as one of the header's cells, the way the search toggle is.
+  assert.match(source, /title=\{t\("sidebar\.newProject"\)\}\n\s+aria-label=\{t\("sidebar\.newProject"\)\}\n\s+className="sidebar-search-toggle"/);
   assert.match(source, /await fetch\("\/api\/default-project"\)/);
   assert.match(source, /await fetch\("\/api\/default-project", \{/);
   assert.match(source, /setNewProjectOpen\(true\)/);

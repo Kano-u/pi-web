@@ -2212,7 +2212,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onClick={() => void handleNewProjectClick()}
           title={t("sidebar.newProject")}
           aria-label={t("sidebar.newProject")}
-          className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[7px] border border-border bg-bg-hover text-text-muted hover:bg-bg-selected hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+          className="sidebar-search-toggle"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4Z" />
