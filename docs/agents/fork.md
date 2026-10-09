@@ -6,7 +6,7 @@ this file holds the reasoning behind them.
 
 Files: `lib/duration-format.ts`, `components/ShellTimeoutBadge.tsx`, `lib/default-project.ts`,
 `components/NewProjectDialog.tsx`, `lib/file-mutations.ts`, `lib/file-archives.ts`,
-`components/DirectoryPicker.tsx`, `lib/ntfy.ts`, `lib/ntfy-templates.ts`, `app/api/ntfy/route.ts`, `lib/terminal-pty.ts`, `lib/terminal-pty.test.mjs`, `e2e/terminal-bun.mjs`.
+`components/DirectoryPicker.tsx`, `lib/ntfy.ts`, `lib/ntfy-templates.ts`, `app/api/ntfy/route.ts`, `lib/terminal-pty.ts`, `lib/terminal-pty.test.mjs`, `e2e/terminal-bun.mjs`, `lib/git-history-state.ts`.
 
 
 ## Shell call timeout badge
@@ -43,11 +43,6 @@ In `components/ChatInput.tsx` the list loads once on mount (failures leave it em
 
 Create, rename, delete, touch, mkdir, download, in-place edit, extract and compress. `lib/file-mutations.ts` (name validation, real-parent resolution, the allow-root-checked create/rename/delete/write paths), `lib/file-archives.ts` + `lib/archive-names.ts` (bsdtar extract and zip), the mutation branch of `POST /api/files/[...path]`, and the context menu, inline rename and inline create rows of `components/FileExplorer.tsx`, the editor in `components/FileViewer.tsx`, and the `onFileMutated` refresh wiring in `components/AppShell.tsx`. Upstream closed the PR as out of a thin frontend's scope, so `PRS.md` keeps its row.
 
-## Explorer "show ignored files" toggle
-
-Upstream's file tree always drops `.gitignore`d and conventionally hidden entries. The explorer toolbar's third button (an eye, after new file / new folder) toggles a show-all listing: `FileTreeVisibilityOptions.includeIgnored` in `lib/file-tree-visibility.ts` returns `(name) => !ALWAYS_HIDDEN_NAMES.has(name)` before any Git call, so the listing stays one `readdir` and only `.git` / `.DS_Store` stay hidden. `components/FileExplorer.tsx` threads `includeIgnored` into `fetchEntries`, both `TreeNode` instances and the fetch effects' dependency lists, so a toggle re-lists every open directory. Access rules are untouched — the parameter changes visibility only, and `/api/file-index` (`isHiddenOutsideGit`) still hides ignored files from the `@`-mention list.
-
-The preference is per browser, beside upstream's explorer-open state: `EXPLORER_SHOW_IGNORED_STORAGE_KEY = "pi-web:file-explorer:show-ignored"` with `loadExplorerShowIgnored` (a missing key means the new default, `true`) and `saveExplorerShowIgnored` in `lib/file-explorer-state.ts`. The component seeds `true` and hydrates after mount so the first client render matches the server's; the button is tinted while on and swaps between the eye and the eye-off icon. `files.showIgnoredFiles` / `files.hideIgnoredFiles` are in all three locales.
 
 ## Active project tabs
 
@@ -119,3 +114,16 @@ Taking it cost exactly four conflicts, all of them because the fork had already 
 Everything else merged by itself, including the PR's rewrite of `components/AppShell.tsx` (commit-diff tabs, next to the fork's `onFileMutated` and `getProjectTabs`) and its additions to `lib/git-types.ts`, which is a fork file upstream does not know about. The fork's `showProjectActivity` ring, the explorer's show-ignored toggle and the 28px file-panel toggle all survived; `node_modules/.bin/tsc --noEmit`, `npm run lint` and `npm test` (2499 pass, the one known `lib/skill-lock` environment failure, 1 skip) were run on the merged tree.
 
 When a later sync brings #1090 in from upstream, delete its row from `PRS.md` and expect these same four files to conflict again — this time with a new panel to keep, not to add.
+
+### a096af3 → c9e1513 (v0.10.0 → v0.11.0, 27 commits, merged as one merge commit)
+
+Sixteen files conflicted, in four groups.
+
+- The show-ignored feature: upstream's #1092 landed the idea the fork already had, so the fork's version was dropped wholesale. `lib/file-tree-visibility.ts` takes upstream's `getFileTreeHiddenReasons()` plus `getFileTreeVisibility(directory, names)` (no `options` argument), the list route answers `?type=list&hidden=1` with `hidden: "ignored" | "excluded"`, the explorer reads a `showHidden` prop from `SessionSidebar`'s own eye button, and `lib/file-explorer-state.ts` with its test is gone because the switch now lives in upstream's `lib/sidebar-prefs.ts` (`pi-web:sidebar-files-show-ignored`, default **off**). The fork's `includeIgnored` plumbing, its `loadExplorerShowIgnored` / `saveExplorerShowIgnored` and the `files.showIgnoredFiles` / `files.hideIgnoredFiles` keys went with it — and so did this file's own "show ignored files" section. The one behaviour change to remember: the fork's default was on, upstream's is off.
+- The sidebar: upstream rewrote `components/SessionSidebar.tsx` (project groups with a manual order, pins, archive, the Sessions|Files tabs, and the new `SessionTree.tsx` / `SidebarMenu.tsx` / `ProjectWorktreePicker.tsx`), so the fork's four features were re-applied onto that structure rather than merged into it: the New project button in the header (after `.sidebar-new-button`, before the search toggle), the Git history pane under the explorer inside the Files tab, the `onUnreadSessionIdsChange` report, and the exported `showProjectActivity` — now with the `compact` ring-only mode the top bar's mobile chips call. `explorerOpen`, the sessions/explorer split and its `--sidebar-session-pane-height` resizer are gone with upstream's layout, so the Git history handle is the only resizer left in the file; the pane's height is `--sidebar-git-history-height`, written by `useResizablePanel` and remembered under `pi-web:sidebar-git-history-height`. Its open flag moved out of `lib/file-explorer-state.ts` into the new `lib/git-history-state.ts` when that file was deleted.
+- `components/FileExplorer.tsx` keeps the fork's file management (new file, new folder, context menu, inline rename) beside upstream's hidden-entry pipeline: it now threads `showHidden` / `parentHidden` where it used to thread `includeIgnored`, and it no longer owns an eye button of its own.
+- `lib/project-groups.ts`: upstream dropped `sessionsForProject`, so the fork's `getProjectTabs()` ranks `getRecentProjects()` itself and keeps `MIN_PROJECT_TABS = 3`. `app/globals.css`, `AGENTS.md`, `docs/agents/files-and-access.md` and the three locales were merged as text, keeping upstream's new lines and the fork's.
+
+Everything else merged by itself, including upstream's new `app/sidebar.css` / `app/sidebar-menu.css` styles, the fresh composer's project/worktree bar (`components/NewSessionContextBar.tsx`, `components/WorktreeCreateForm.tsx`), the chat's tool duration (`formatToolDuration`, which the fork's `ShellTimeoutBadge` now sits beside in `components/MessageView.tsx`), and pi 1.0.0 → 1.1.0.
+
+`node_modules/.bin/tsc --noEmit` and `npm run lint` are clean on the merged tree, and `npm test` matches the baseline AGENTS.md records (2790 tests, the one known `lib/skill-lock` environment failure, one skip).

@@ -12,7 +12,6 @@ import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAss
 import { parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
 import { getShellTimeout, isApplyPatchToolName, isEditToolName, isShellToolName, isWriteToolName } from "@/lib/tool-names";
-import { formatDurationLabel } from "@/lib/duration-format";
 import { ShellTimeoutBadge } from "./ShellTimeoutBadge";
 import { ThinkingBody } from "./ThinkingBody";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
@@ -713,25 +712,27 @@ function AssistantMessageView({
   const blockStartTimesRef = useRef<Map<number, number>>(new Map());
   const [streamingDurations, setStreamingDurations] = useState<Map<number, number>>(new Map());
 
-  // Thinking duration derived from file timestamps: time from prev message end to this message end
-  // This is the total generation time (thinking + any text before first tool call)
+  // Thinking duration of a completed message: the whole response's generation time, which pi
+  // records since 1.1 (`durationMs`, from the request's start). Older messages only have
+  // timestamps: the time since the previous message.
+  const messageDurationMs = message.role === "assistant" ? recordedDurationMs(message.durationMs) : undefined;
   const thinkingDurationFromFile = useMemo<number | undefined>(() => {
-    if (!message.timestamp || !prevTimestamp) return undefined;
-    const secs = Math.round((message.timestamp - prevTimestamp) / 1000);
+    const ms = messageDurationMs ?? (message.timestamp && prevTimestamp ? message.timestamp - prevTimestamp : undefined);
+    if (ms === undefined) return undefined;
+    const secs = Math.round(ms / 1000);
     return secs > 0 ? secs : undefined;
-  }, [message.timestamp, prevTimestamp]);
+  }, [messageDurationMs, message.timestamp, prevTimestamp]);
 
-  // Tool call durations derived from session file timestamps (accurate for completed messages)
-  // assistant message timestamp = when generation ended = when tools started running
-  // toolResult timestamp = when tool execution finished
+  // Tool call durations in milliseconds: the execution time pi records on each result since 1.1,
+  // as the pi CLI's "Took" shows it. An older result only has timestamps, the result's minus this
+  // message's (when its request started), which counts the model's generation too.
   const toolCallDurations = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
-    if (!toolResults || !message.timestamp) return map;
+    if (!toolResults) return map;
     for (const [callId, result] of toolResults) {
-      if (result.timestamp && message.timestamp) {
-        const secs = Math.round((result.timestamp - message.timestamp) / 1000);
-        if (secs > 0) map.set(callId, secs);
-      }
+      const ms = recordedDurationMs(result.durationMs)
+        ?? (result.timestamp && message.timestamp ? result.timestamp - message.timestamp : undefined);
+      if (ms !== undefined && ms >= TOOL_DURATION_MIN_MS) map.set(callId, ms);
     }
     return map;
   }, [toolResults, message.timestamp]);
@@ -1119,6 +1120,25 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
   return details.kind === "pi-web-subagent" && typeof details.sessionId === "string";
 }
 
+/** A duration pi recorded on a message, or undefined when there is none to trust. */
+function recordedDurationMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Below this a tool card shows no time: it would read 0.0s on every quick read or search. */
+const TOOL_DURATION_MIN_MS = 100;
+
+/** A tool's run time as the pi CLI's "Took" writes it: 2.4s, then 3m 5s, then 1h 2m 5s. */
+export function formatToolDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainder = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainder}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
+}
+
 function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; toolStartedAt?: number; onOpenSession?: (sessionId: string) => void }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
@@ -1215,7 +1235,7 @@ function ToolCallBlock({ block, result, duration, toolStartedAt, onOpenSession }
             </span>
           )}
           {duration !== undefined && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatDurationLabel(duration)}</span>
+            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatToolDuration(duration)}</span>
           )}
           {shellTimeout !== null && !result?.timestamp && (
             <ShellTimeoutBadge timeout={shellTimeout} startedAt={toolStartedAt} />
@@ -1335,6 +1355,7 @@ function SplitFilesView({ files }: { files: SplitDiffFile[] }) {
             minWidth: 0,
             borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
             fontFamily: "var(--font-mono)",
+            fontWeight: "var(--font-mono-weight)",
             fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.55,
           }}
@@ -1463,7 +1484,7 @@ function PatchTextView({ text }: { text: string }) {
   const lines = text.split(/\r?\n/);
 
   return (
-    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontSize: "calc(12px + var(--chat-font-size-offset, 0px))", lineHeight: 1.55, minWidth: 0 }}>
+    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontWeight: "var(--font-mono-weight)", fontSize: "calc(12px + var(--chat-font-size-offset, 0px))", lineHeight: 1.55, minWidth: 0 }}>
       {lines.map((line, i) => {
         const kind =
           line.startsWith("@@") ? "hunk" :

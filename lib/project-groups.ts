@@ -76,10 +76,3 @@ export function getProjectTabs(
   const busy = ranked.filter((project) => rankOf(project) < 2).length;
   return ranked.slice(0, Math.max(minimum, busy));
 }
-
-export function sessionsForProject(
-  sessions: readonly SessionInfo[],
-  projectKey: string,
-): SessionInfo[] {
-  return sessions.filter((session) => workspaceKeyOf(session) === projectKey);
-}

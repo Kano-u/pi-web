@@ -49,7 +49,7 @@ test("shows one initial per project on mobile and the name on desktop", () => {
 });
 
 test("reuses the sidebar's project activity badge for the running ring", () => {
-  assert.match(source, /import \{ SessionSidebar, showProjectActivity \} from "\.\/SessionSidebar";/);
+  assert.match(source, /import \{ SessionSidebar, showProjectActivity,[\s\S]*?\} from "\.\/SessionSidebar";/);
   assert.match(source, /import \{ getProjectTabs, getProjectActivity \} from "@\/lib\/project-groups";/);
   assert.match(
     source,
