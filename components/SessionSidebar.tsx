@@ -80,11 +80,11 @@ import {
   FolderIcon,
   FolderPlusIcon,
   MessageIcon,
+  NewSessionIcon,
   ForkIcon,
   PencilIcon,
   PinIcon,
   PinOffIcon,
-  PlusIcon,
   RefreshIcon,
   RestoreIcon,
   SearchIcon,
@@ -2206,9 +2206,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onClick={handleNewSession}
           disabled={!selectedCwd}
           title={selectedCwd ? t("sidebar.newSessionTitle", { path: selectedCwd }) : t("sidebar.selectProject")}
+          aria-label={t("sidebar.new")}
         >
-          <PlusIcon size={12} />
-          <span className="sidebar-new-label">{t("sidebar.new")}</span>
+          <NewSessionIcon size={13} />
         </button>
         <button
           type="button"

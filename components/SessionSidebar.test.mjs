@@ -145,7 +145,12 @@ test("sessions and files are two tabs of one sidebar, both kept mounted", () => 
   assert.equal((tablist[1].match(/role="tab"/g) ?? []).length, 2);
   // Each tab is an icon and a label, as the chat bar's cells are.
   assert.match(tablist[1], /class="sidebar-tab is-selected"><svg[^>]*class="sidebar-tab-icon"[^>]*>[\s\S]*?<\/svg><span class="sidebar-tab-label">Sessions<\/span><\/button>/);
-  assert.match(html, /<span class="sidebar-new-label">New<\/span><\/button><button type="button" title="New project"[^>]*>[\s\S]*?<\/button><button type="button" title="Search conversations"/);
+  // The fork's New session cell is its glyph alone — no `+`, no label — named
+  // by `sidebar.new`, and the New project and search cells follow it, so the
+  // row is three icon cells. (Its title text depends on the selected project,
+  // which the picker owns, so only the accessible name is asserted here.)
+  assert.match(html, /<button type="button" class="sidebar-new-button"[^>]*aria-label="New"><svg[^>]*viewBox="0 0 16 16"[^>]*>[\s\S]*?<\/svg><\/button><button type="button" title="New project"[^>]*>[\s\S]*?<\/button><button type="button" title="Search conversations"/);
+  assert.doesNotMatch(html, /sidebar-new-label/);
   assert.doesNotMatch(html, /View options|Pi Web/);
   const sessionsTab = openingTag(html, "session-sidebar-tab-sessions");
   const filesTab = openingTag(html, "session-sidebar-tab-files");

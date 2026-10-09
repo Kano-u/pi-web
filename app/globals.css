@@ -2173,6 +2173,19 @@ span.token.table {
   opacity: 0.6;
 }
 
+/* Fork: the New session cell is icon-only. Upstream's cell is a `+` beside the
+   word New, and only collapses to the icon alone once `useHeaderFit` sets
+   data-fit 1 (app/sidebar.css), so its width lives in those rules while the
+   shared cell rule still pads `0 12px`. The fork always renders the icon, so the
+   cell is a fixed, unpadded 36px like the search cell. Two classes, because
+   sidebar.css is imported after this file and order decides at equal ones;
+   upstream's three `[data-fit]` rules say the same thing. */
+.sidebar-header .sidebar-new-button {
+  width: 36px;
+  gap: 0;
+  padding: 0;
+}
+
 /* Fork: the files tab's action row is the tree bar too. The fork's new file and
    new folder moved up from the explorer's own bar, so its cells are that bar's
    22×20 rather than the toolbar's 32px — every other state (color, hover,
