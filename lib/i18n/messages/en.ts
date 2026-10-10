@@ -293,8 +293,6 @@ export const enLocale: LocalePlugin = {
     "files.restorePanelWidth": "Restore file panel width",
     "files.showPanel": "Show file panel",
     "files.noneOpen": "No file open",
-    "projects.active": "Active projects",
-    "projects.switchTo": "Switch to {path}",
     "layout.resizeSidebar": "Resize sidebar",
     "layout.resizeFilePanel": "Resize file panel",
     "layout.resizeGitHistory": "Resize file explorer and Git history",

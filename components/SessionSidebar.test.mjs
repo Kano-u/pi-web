@@ -834,11 +834,3 @@ test("the fork's New project entry sits in the header and opens its dialog", () 
   assert.match(source, /await fetch\("\/api\/default-project", \{/);
   assert.match(source, /setNewProjectOpen\(true\)/);
 });
-
-test("the sidebar reports its unread ids and exports the project activity badge", () => {
-  assert.match(source, /onUnreadSessionIdsChange\?\.\(unreadSessionIds\);/);
-  assert.match(source, /export function showProjectActivity\(/);
-  assert.match(source, /if \(compact && activity\.running === 0\) return null;/);
-  // The fork's project tabs read it from the shell.
-  assert.match(appShellSource, /showProjectActivity/);
-});
