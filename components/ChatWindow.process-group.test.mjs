@@ -12,7 +12,13 @@ const source = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8"
 
 test("keeps a turn's process section open while the reader has a thinking block open", () => {
   assert.match(source, /import \{ hasOpenedThinking \} from "@\/lib\/thinking-expansion-state";/);
-  assert.match(source, /const openedProcess = hasOpenedThinking\(finalProcessBlocks\);/);
-  assert.match(source, /defaultExpanded=\{!finalAnswerMessage\} rememberedOpen=\{openedProcess\}/);
+  // Upstream v0.11.1 computes the process view with `getFinalAnswerViews`, whose
+  // `process.content` is the slice of the message the group renders (through
+  // `messageOverride`), so its block indexes are the ones `MessageView` hands
+  // `ThinkingBlock`.
+  assert.match(source, /const openedProcess = hasOpenedThinking\(finalViews\.process\.content\);/);
+  // Upstream keys the group's default on `collapsesProcessDetails(finalAnswerMessage)`
+  // (`answered`), not on the answer's presence; the fork only adds the memory.
+  assert.match(source, /defaultExpanded=\{!answered\} rememberedOpen=\{openedProcess\}/);
   assert.match(source, /if \(rememberedOpen\) setExpanded\(true\);/);
 });
