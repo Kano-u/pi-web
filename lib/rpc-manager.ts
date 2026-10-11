@@ -16,7 +16,6 @@ import {
 import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
-import { notifyNtfySessionComplete } from "./ntfy";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
@@ -2497,9 +2496,6 @@ export async function startRpcSession(
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
-        });
-        void notifyNtfySessionComplete(completedSessionId).catch((error) => {
-          console.error("[pi-web] failed to send ntfy notification:", error instanceof Error ? error.message : error);
         });
       },
       suppressCompletionNotifications: Boolean(subagentResources),
