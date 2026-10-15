@@ -6,7 +6,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { I18nProvider } = await jiti.import("@/hooks/useI18n.tsx");
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { SessionSidebar, nearestEnabledKey, handOffDisabledKeyFocus, sameIdsOr } = await jiti.import("./SessionSidebar.tsx");
 const { buildSessionTree, getRowOffsets, getVisibleRowIndices } = await jiti.import("@/lib/session-tree.ts");
 const { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH } = await jiti.import("@/lib/panel-layout.ts");
@@ -233,7 +233,7 @@ test("the tabs layout (the setting, phones) is the two tabs as before, in the sa
   positions.forEach((position, index) => assert.ok(position >= 0, `${order[index]} rendered`));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
   assert.equal((source.match(/<FileExplorer\n/g) ?? []).length, 1);
-  assert.equal((source.match(/<SessionTree\n/g) ?? []).length, 1);
+  assert.equal((source.match(/<SessionTree[^A-Za-z]/g) ?? []).length, 2);
   assert.equal((source.match(/<ProjectWorktreePicker\n/g) ?? []).length, 1);
   assert.equal((source.match(/<PiWebTitle /g) ?? []).length, 1);
   // The picker is one instance in both layouts: only its layout prop differs.
@@ -288,7 +288,7 @@ test("the files section folds to its header row, saved per browser, and its sear
   // Restored after hydration with the other preferences, never in a state initializer.
   assert.match(source, /const \[filesCollapsed, setFilesCollapsed\] = useState\(false\);/);
   assert.doesNotMatch(source, /useState[^;\n]*\(\(\) => loadFilesCollapsed\(\)\)/);
-  assert.match(source, /if \(loadPinnedCollapsed\(\)\) setPinnedCollapsed\(true\);\s*if \(loadFilesCollapsed\(\)\) setFilesCollapsed\(true\);/);
+  assert.match(source, /if \(loadPinnedCollapsed\(\)\) setPinnedCollapsed\(true\);\s*const archiveFolds = loadArchiveCollapsed\(\);\s*if \(archiveFolds\.length > 0\) setArchiveCollapsed\(archiveFolds\);\s*if \(loadFilesCollapsed\(\)\) setFilesCollapsed\(true\);/);
   assert.match(callbackBody("setFilesSectionCollapsed"), /setFilesCollapsed\(collapsed\);\s*saveFilesCollapsed\(collapsed\);/);
   // The header's toggle folds it; folded, everything under it is hidden,
   // not unmounted, and the separator goes. Its title says how many files
@@ -853,7 +853,7 @@ test("the layout, the tab and the fold chosen last are shown again after hydrati
   assert.doesNotMatch(source, /useState[^;\n]*\(\(\) => load(?:SidebarTab|GroupExpansion|PinnedCollapsed|ShowIgnoredFiles)\(\)\)/);
   assert.match(
     source,
-    /useEffect\(\(\) => \{\s*const tab = loadSidebarTab\(\);\s*if \(tab !== "sessions"\) setSidebarTab\(tab\);\s*const groups = loadGroupExpansion\(\);\s*if \(Object\.keys\(groups\)\.length > 0\) setGroupExpansion\(groups\);\s*if \(loadPinnedCollapsed\(\)\) setPinnedCollapsed\(true\);\s*if \(loadFilesCollapsed\(\)\) setFilesCollapsed\(true\);\s*if \(loadShowIgnoredFiles\(\)\) setShowIgnoredFiles\(true\);\s*if \(loadGitHistoryOpen\(\)\) setGitHistoryOpen\(true\);\s*forgetRetiredSidebarKeys\(\);\s*\}, \[\]\);/,
+    /useEffect\(\(\) => \{\s*const tab = loadSidebarTab\(\);\s*if \(tab !== "sessions"\) setSidebarTab\(tab\);\s*const groups = loadGroupExpansion\(\);\s*if \(Object\.keys\(groups\)\.length > 0\) setGroupExpansion\(groups\);\s*if \(loadPinnedCollapsed\(\)\) setPinnedCollapsed\(true\);\s*const archiveFolds = loadArchiveCollapsed\(\);\s*if \(archiveFolds\.length > 0\) setArchiveCollapsed\(archiveFolds\);\s*if \(loadFilesCollapsed\(\)\) setFilesCollapsed\(true\);\s*if \(loadShowIgnoredFiles\(\)\) setShowIgnoredFiles\(true\);\s*if \(loadGitHistoryOpen\(\)\) setGitHistoryOpen\(true\);\s*forgetRetiredSidebarKeys\(\);\s*\}, \[\]\);/,
   );
 });
 
@@ -1043,7 +1043,7 @@ test("a new session moves the cwd and hands the shell the target's project", () 
 
 test("a group's + starts a session at once, in the sidebar's worktree for the current project", () => {
   const body = callbackBody("handleGroupNew");
-  assert.match(body, /const handleGroupNew = useCallback\(\(project: SidebarProject\) => \{\s*setMenu\(null\);\s*startNewSessionIn\(\{\s*cwd: project\.current && selectedCwd \? selectedCwd : project\.root,\s*projectKey: project\.key,\s*projectRoot: project\.root,\s*\}\);/);
+  assert.match(body, /const handleGroupNew = useCallback\(\(project: SidebarProject\) => \{\s*setMenu\(null\);\s*startNewSessionIn\(newSessionTargetForProject\(project, selectedCwd\)\);/);
   assert.match(body, /\}, \[selectedCwd, startNewSessionIn\]\);/);
   assert.doesNotMatch(body, /fetch\(|\/api\/worktrees|kind: "worktrees"/);
   assert.match(source, /onGroupNew: handleGroupNew,/);
@@ -1117,9 +1117,9 @@ test("archive keeps an undo snapshot and clears unread markers", () => {
   assert.match(body, /\.then\(\(ok\) => \{\s*\/\/[^\n]*\n\s*if \(ok \|\| unreadBefore\.length === 0\) return;\s*const partIds = new Set\(part\.flatMap\(\(family\) => familyIds\(family\)\)\);\s*restoreUnread\(unreadBefore\.filter\(\(id\) => partIds\.has\(id\)\)\);/);
   // The session open by then has been read: its marker stays off.
   assert.match(callbackBody("restoreUnread"), /if \(id !== selectedSessionIdRef\.current\) next\.add\(id\);/);
-  assert.match(body, /\{ id: "view", label: t\("sidebar\.viewArchive"\), onClick: openArchiveView \}/);
+  assert.match(body, /\{ id: "view", label: t\("sidebar\.viewArchive"\), onClick: \(\) => openArchiveView\(\) \}/);
   assert.match(callbackBody("archiveFamily"), /if \(familyIds\(family\)\.some\(\(id\) => runningSessionIds\.has\(id\)\)\) return;/);
-  assert.match(callbackBody("restoreFamily"), /void applyUiState\(\{ action: "set", ids, archived: false \}\);[\s\S]*?t\("sidebar\.restoredToast"/);
+  assert.match(callbackBody("restoreFamilies"), /void applyUiState\(\{ action: "set", ids: part, archived: false \}\);[\s\S]*?t\("sidebar\.restoredToast"/);
   // A refused save is reported once per failure.
   assert.match(callbackBody("applyUiState"), /if \(!ok\) setUiWriteFailures\(\(count\) => count \+ 1\);/);
   assert.match(source, /showToast\(t\("sidebar\.uiStateFailed", \{ error: uiStateError \?\? "" \}\)\);/);
@@ -1150,11 +1150,11 @@ test("the footer opens the project list in the files; the archive view replaces 
   // Once the files show, the picker's project menu opens below its button.
   assert.match(footer, /if \(target === "project-list"\) filesPickerRef\.current\?\.openMenu\("project"\);/);
   assert.match(source, /onOpenOtherProject: handleOpenOtherProject,/);
-  assert.match(source, /onOpenArchive: openArchiveView,/);
+  assert.match(source, /onOpenArchive: \(\) => openArchiveView\(\),/);
   // The sessions tab, in the tabs layout (switchTab does nothing below the files).
   assert.match(callbackBody("openArchiveView"), /setArchiveView\(true\);[\s\S]*?setSessionSearchOpen\(false\);\s*switchTab\("sessions"\);/);
   assert.match(source, /<div className="sidebar-sessions-view" hidden=\{archiveMotion\.mainHidden\} inert=\{archiveMotion\.mainInert\}>\s*<SessionTree\s+\{\.\.\.treeProps\}\s+rows=\{model\.rows\}\s+emptyLabel=\{t\("sidebar\.noSessions"\)\}\s+reveal=\{treeReveal\}\s+onRevealHandled=\{handleRevealHandled\}\s+\/>/);
-  assert.match(source, /<SessionTree \{\.\.\.treeProps\} rows=\{archiveRows\} emptyLabel=\{t\("sidebar\.noArchived"\)\} \/>/);
+  assert.match(source, /<SessionTree\s+\{\.\.\.treeProps\}\s+rows=\{archiveRows\}\s+emptyLabel=\{t\("sidebar\.noArchived"\)\}\s+reveal=\{archiveReveal\}\s+onRevealHandled=\{handleArchiveRevealHandled\}\s+\/>/);
   assert.match(source, /const sessionMenuItems = \(row: SessionRow\): SidebarMenuItem\[\] => sessionMenuEntries\(row\.context, row\.status\)/);
   assert.match(callbackBody("handleTogglePinned"), /setPinnedCollapsed\(next\);\s*savePinnedCollapsed\(next\);/);
 });
@@ -1242,13 +1242,13 @@ test("focus that went away with the archive view, a toast or a delete confirmati
   assert.match(callbackBody("focusAfterCommit"), /focusAfterCommitRef\.current = target;\s*setFocusRequest\(\(count\) => count \+ 1\);/);
   assert.match(source, /if \(target\) focusIfLost\(document, target\(\)\);\s*\}, \[focusRequest\]\);/);
   assert.match(callbackBody("archiveFamilies"), /focusAfterCommit\(\(\) => familyRowButton\(archivable\[0\]\.root\.id\)\);/);
-  assert.match(callbackBody("restoreFamily"), /focusAfterCommit\(\(\) => familyRowButton\(family\.root\.id\)\);/);
+  assert.match(callbackBody("restoreFamilies"), /focusAfterCommit\(\(\) => familyRowButton\(families\[0\]\.root\.id\)\);/);
   assert.match(source, /onDeleteCancel: \(\) => \{\s*const rootId = confirmDeleteRootId;\s*setConfirmDeleteRootId\(null\);[\s\S]*?if \(rootId\) focusAfterCommit\(\(\) => familyRowButton\(rootId\)\);/);
   const rowButton = callbackBody("familyRowButton");
   assert.match(rowButton, /for \(const context of \["pinned", "group", "archive"\]\)/);
   assert.match(rowButton, /\.session-tree-main`\);\s*if \(button && button\.getClientRects\(\)\.length > 0\) return button;\s*\}\s*return selectedTabButton\(\);/);
   // The toast's View opens the archive, whose Back then takes focus.
-  assert.match(callbackBody("archiveFamilies"), /\{ id: "view", label: t\("sidebar\.viewArchive"\), onClick: openArchiveView \}/);
+  assert.match(callbackBody("archiveFamilies"), /\{ id: "view", label: t\("sidebar\.viewArchive"\), onClick: \(\) => openArchiveView\(\) \}/);
 });
 
 test("Fork copies the row's session on the server and opens the copy where its row is", () => {
