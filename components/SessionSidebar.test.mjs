@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createJiti } from "jiti";
+import ts from "typescript";
+import vm from "node:vm";
 
 const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
 const React = await jiti.import("react");
@@ -921,7 +923,7 @@ test("subagent completion stays silent and never becomes unread", () => {
   assert.match(source, /completionNotificationSuppressedSessionIds\?: string\[\]/);
   assert.match(
     source,
-    /completedWithNotifications = completedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/,
+    /completedWithNotifications = finishedInBackground\.filter\([\s\S]*?!previousSuppressedCompletionSessionIdsRef\.current\.has\(id\)[\s\S]*?!knownSubagentIds\.has\(id\)/,
   );
   assert.match(source, /completedWithNotifications\.forEach\(\(id\) => next\.add\(id\)\)/);
   assert.match(source, /if \(completedWithNotifications\.length > 0\) \{\s*onBackgroundTaskDone\?\.\(\)/);
@@ -952,7 +954,7 @@ test("search results of archived families are tagged, not hidden", () => {
   assert.match(searchSource, /archivedSessionIds\?: ReadonlySet<string>;/);
   assert.match(
     searchSource,
-    /\{session\.name \|\| session\.firstMessage\}<\/span>\s*\{archivedSessionIds\?\.has\(session\.id\) && \(\s*<span className="[^"]*text-\[10px\][^"]*">\{t\("sidebar\.archived"\)\}<\/span>/,
+    /\{titleMatch \? [\s\S]*?: session\.name \|\| session\.firstMessage\}\s*<\/span>\s*\{archivedSessionIds\?\.has\(session\.id\) && \(\s*<span className="[^"]*text-\[10px\][^"]*">\{t\("sidebar\.archived"\)\}<\/span>/,
   );
   // The whole family counts: a subagent hit of an archived session is tagged too.
   assert.match(source, /for \(const id of familyIds\(family\)\) ids\.add\(id\);/);
@@ -1065,11 +1067,12 @@ test("the composer's bar moves through a handle made once, with the newest closu
   // A created worktree is listed at once and refetched, whether or not anyone moves there.
   const create = callbackBody("createWorktree");
   assert.match(create, /body: JSON\.stringify\(\{ cwd: project\.root, branch \}\)/);
-  assert.match(create, /if \(!res\.ok \|\| data\.error \|\| !data\.path\) return \{ error: data\.error \?\? `HTTP \$\{res\.status\}` \};/);
+  // A refusal is the sidebar translator's (upstream's worktreeCreateFailure), not a bare message.
+  assert.match(create, /if \(!res\.ok \|\| data\.error \|\| !data\.path\) \{\s*const failure = worktreeCreateFailure\(data, res\.status\);\s*return "key" in failure\s*\? \{ error: t\(failure\.key, \{ \.\.\.failure\.params, path: shortenPath\(failure\.params\.path\) \}\) \}\s*: failure;\s*\}/);
   const listed = create.indexOf("prev.projectKey === project.key && !prev.worktrees.some((worktree) => worktree.path === path)");
   const refetch = create.indexOf("setWtRefreshKey((k) => k + 1);\n      return { path };");
   assert.ok(listed >= 0 && listed < refetch, "listed, then refetched, then handed back");
-  assert.match(create, /return \{ error: e instanceof Error \? e\.message : String\(e\) \};\s*\}\s*\}, \[\]\);/);
+  assert.match(create, /return \{ error: e instanceof Error \? e\.message : String\(e\) \};\s*\}\s*\}, \[t\]\);/);
   assert.match(source, /controlRef\?: Ref<SessionSidebarControl>;/);
 });
 
@@ -1412,4 +1415,43 @@ test("the fork's New project entry sits in the header and opens its dialog", () 
   assert.match(source, /await fetch\("\/api\/default-project"\)/);
   assert.match(source, /await fetch\("\/api\/default-project", \{/);
   assert.match(source, /setNewProjectOpen\(true\)/);
+});
+
+test("a read or a mark in another tab reaches this one: the storage handler adopts that tab's write", () => {
+  const parse = between("function parseUnreadSessionIds(", "\nfunction loadUnreadSessionIds");
+  const handler = between("const onStorage = (event: StorageEvent) => {", '\n    window.addEventListener("storage", onStorage);');
+  const code = ts.transpileModule(`${parse}\n${handler}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const updaters = [];
+  const onStorage = vm.runInNewContext(`${code}\nonStorage`, {
+    UNREAD_SESSIONS_STORAGE_KEY: "pi-web:unread-session-ids",
+    sameIdsOr,
+    setUnreadSessionIds: (updater) => updaters.push(updater),
+  });
+
+  // Another key's write never touches the unread markers.
+  onStorage({ key: "pi-web:terminal-theme", newValue: '["a"]' });
+  assert.equal(updaters.length, 0);
+
+  // The other tab read the session: the key (or all of storage) went away.
+  onStorage({ key: "pi-web:unread-session-ids", newValue: null });
+  assert.deepEqual([...updaters.pop()(new Set(["a", "b"]))], []);
+
+  // The other tab wrote a newer set; it replaces this tab's, stale markers and all.
+  onStorage({ key: "pi-web:unread-session-ids", newValue: '["a","b","b","c"]' });
+  assert.deepEqual([...updaters.pop()(new Set(["a", "d"]))].sort(), ["a", "b", "c"]);
+
+  // The same set keeps the same Set: no re-render, so no echo of the write back.
+  onStorage({ key: "pi-web:unread-session-ids", newValue: '["a"]' });
+  const unchanged = new Set(["a"]);
+  assert.equal(updaters.pop()(unchanged), unchanged);
+
+  // A malformed write means no markers, not a crash.
+  onStorage({ key: "pi-web:unread-session-ids", newValue: "{not json" });
+  assert.deepEqual([...updaters.pop()(new Set(["a"]))], []);
+
+  // The listener is registered for the storage event and taken off again.
+  assert.match(source, /window\.addEventListener\("storage", onStorage\);/);
+  assert.match(source, /window\.removeEventListener\("storage", onStorage\);/);
 });
